@@ -365,14 +365,10 @@ def solve_with_method(
 
 
 def _solve_ida_result(facelets: str, timeout_s: float = 22.0) -> SolveResult:
-    err = validate_facelets(facelets)
+    err = validate_cube_state(facelets)
     if err:
         raise ValueError(err)
     t0 = time.time()
-    cc = from_facelets(facelets)
-    verr = cc.verify()
-    if verr:
-        raise ValueError(verr)
     if facelets == "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB":
         return SolveResult(
             moves=[], move_count=0, facelets=facelets,
@@ -406,14 +402,10 @@ def _solve_ida_result(facelets: str, timeout_s: float = 22.0) -> SolveResult:
 
 
 def _solve_cfop_result(facelets: str, timeout_s: float = 35.0) -> SolveResult:
-    err = validate_facelets(facelets)
+    err = validate_cube_state(facelets)
     if err:
         raise ValueError(err)
     t0 = time.time()
-    cc = from_facelets(facelets)
-    verr = cc.verify()
-    if verr:
-        raise ValueError(verr)
     if facelets == "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB":
         return SolveResult(
             moves=[], move_count=0, facelets=facelets,
