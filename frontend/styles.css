@@ -395,42 +395,17 @@ body {
 }
 #cube-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 
-/* Teaching arrows */
-.teach-overlay {
-  position: absolute; right: 0.75rem; top: 0.75rem;
-  display: flex; align-items: center; gap: 0.65rem;
-  background: rgba(8,14,11,0.88); border: 1px solid var(--line);
-  border-radius: 12px; padding: 0.55rem 0.75rem;
-  backdrop-filter: blur(10px); max-width: min(92%, 280px);
-  z-index: 3; pointer-events: none;
-}
-.teach-overlay[hidden] { display: none; }
-.teach-arrow { width: 72px; height: 72px; flex-shrink: 0; }
-.teach-arrow svg { width: 100%; height: 100%; }
-.teach-face {
-  font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--accent-2); font-weight: 700;
-}
-.teach-action { font-size: 0.92rem; font-weight: 600; line-height: 1.25; margin: 0.15rem 0; }
-.teach-notation {
-  font-family: var(--font-d); font-size: 1.6rem; color: var(--accent); letter-spacing: 0.04em; line-height: 1;
-}
-
 .move-hud {
-  position: absolute; top: 0.85rem; left: 0.85rem;
-  background: rgba(8,14,11,0.78); border: 1px solid var(--line);
-  border-radius: 10px; padding: 0.65rem 0.85rem; backdrop-filter: blur(8px);
-  min-width: 110px; z-index: 2;
+  position: absolute; top: 0.7rem; left: 0.7rem;
+  background: rgba(8,14,11,0.72); border: 1px solid var(--line);
+  border-radius: 999px; padding: 0.35rem 0.75rem; backdrop-filter: blur(8px);
+  z-index: 2; pointer-events: none;
 }
-.move-face {
-  font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--accent-2); font-weight: 600;
+.move-hud[hidden] { display: none; }
+.move-step {
+  font-family: var(--font-m); font-size: 0.9rem; font-weight: 600;
+  color: var(--accent); letter-spacing: 0.02em;
 }
-.move-notation {
-  font-family: var(--font-d); font-size: 2.4rem; letter-spacing: 0.04em;
-  line-height: 1; color: var(--accent);
-}
-.move-step { font-family: var(--font-m); font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
 .viewer-hint {
   position: absolute; bottom: 0.6rem; left: 50%; transform: translateX(-50%);
   font-size: 0.72rem; color: var(--muted); white-space: nowrap;
@@ -448,22 +423,12 @@ body {
 .speed-row input[type=range] { flex: 1; min-width: 100px; accent-color: var(--accent); }
 #speed-label { font-family: var(--font-m); font-size: 0.8rem; color: var(--accent); min-width: 2.8rem; }
 
-.stage-pill {
-  display: inline-block;
-  font-size: 0.78rem; font-weight: 600;
-  padding: 0.3rem 0.65rem; border-radius: 999px;
-  background: rgba(126,200,255,0.12); border: 1px solid rgba(126,200,255,0.35);
-  color: var(--accent-2); margin-bottom: 0.55rem;
-}
-.stage-pill[hidden] { display: none; }
-
 .result-strip {
   display: flex; flex-wrap: wrap; gap: 0.5rem 1rem;
-  padding: 0.55rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-  margin-bottom: 0.55rem; font-size: 0.82rem;
+  padding: 0.45rem 0; border-top: 1px solid var(--line);
+  margin-bottom: 0.35rem; font-size: 0.9rem; font-weight: 600;
 }
-.result-strip .stat span { font-family: var(--font-m); color: var(--accent); font-weight: 500; }
-#stat-algo { color: var(--muted); max-width: 100%; overflow-wrap: anywhere; }
+.result-strip .stat span { font-family: var(--font-m); color: var(--accent); font-weight: 600; }
 
 .moves-scroll {
   display: flex; flex-wrap: nowrap; gap: 0.35rem;
@@ -484,7 +449,6 @@ body {
   background: var(--accent); color: #10160f; border-color: var(--accent);
 }
 .move-chip.done { opacity: 0.45; }
-.notes { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin: 0; }
 
 /* Modals */
 .modal {
@@ -613,22 +577,15 @@ body {
     min-height: 220px;
     max-height: 400px;
   }
-  .teach-overlay {
-    right: 0.5rem; top: auto; bottom: 1.8rem; left: 0.5rem;
-    max-width: none; width: auto;
-  }
-  .teach-arrow { width: 56px; height: 56px; }
   .guide-body { grid-template-columns: 1fr 1fr; }
   .hide-sm { display: none !important; }
   .playback-dock { margin-top: 0.65rem; }
   .moves-scroll { max-width: 100vw; margin: 0 -0.25rem; padding-left: 0.25rem; padding-right: 0.25rem; }
-  .notes { font-size: 0.78rem; }
 }
 
 @media (max-width: 480px) {
   .face-grid { grid-template-columns: 1fr 1fr; }
   .brand-sub { display: none; }
-  .move-notation { font-size: 1.8rem; }
   .dock-row .btn { flex: 1 1 calc(33.33% - 0.35rem); min-width: 0; font-size: 0.78rem; padding: 0.55rem 0.4rem; }
   .method-card { padding: 0.65rem 0.7rem; }
   .site-header { padding: 0 0.85rem; }

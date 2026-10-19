@@ -1,6 +1,5 @@
 import { initCube3D } from "./cube3d.js";
-import { showTeach, hideTeach, stageAtIndex } from "./teach.js";
-import { CAPTURE_ORDER, CAPTURE_STEPS, holdReminder } from "./capture-guide.js";
+import { CAPTURE_ORDER, CAPTURE_STEPS } from "./capture-guide.js";
 import { buildGuideCube, playGuideSequence } from "./guide-cube.js";
 
 const {
@@ -17,6 +16,9 @@ let lastSolution = null;
 let scrambleFacelets = null; // immutable scramble start
 let lastFacelets = null;
 let playIndex = 0;
+/** faceletHistory[i] = cube after first i moves applied */
+let faceletHistory = [];
+let playbackBusy = false;
 let brush = "white";
 let camStream = null;
 let camFace = "U";
@@ -467,21 +469,13 @@ function applySolution(data) {
   lastFacelets = data.facelets;
   lastSolution = data;
   playIndex = 0;
+  faceletHistory = [data.facelets];
+  playbackBusy = false;
   // Keep user's real sticker colors (not the default white-top scheme)
   paintCubeWithUserColors(data.facelets);
   showResult(data);
   enablePlayback(true);
-  hideTeach();
-
-  const hold = data.hold || holdReminder(faces);
-  const banner = document.getElementById("hold-banner");
-  if (hold) {
-    banner.hidden = false;
-    banner.textContent = hold.message || hold.text;
-  } else {
-    banner.hidden = true;
-  }
-
+  updateHud(0);
   requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
 }
 
@@ -489,17 +483,6 @@ function showResult(data) {
   const strip = document.getElementById("result-strip");
   strip.hidden = false;
   document.getElementById("stat-moves").textContent = String(data.move_count);
-  document.getElementById("stat-ms").textContent = String(Math.round(data.elapsed_ms));
-  document.getElementById("stat-algo").textContent = data.algorithm;
-  document.getElementById("notes").textContent = data.notes || "";
-
-  const pill = document.getElementById("stage-pill");
-  if (data.stages?.length) {
-    pill.hidden = false;
-    pill.textContent = data.stages.map((s) => s.name).join(" → ");
-  } else {
-    pill.hidden = true;
-  }
 
   const movesEl = document.getElementById("moves");
   movesEl.innerHTML = "";
@@ -508,25 +491,9 @@ function showResult(data) {
     chip.className = "move-chip";
     chip.textContent = m;
     chip.dataset.i = String(i);
-    chip.addEventListener("click", () => {
-      // Show teaching for this move without jumping cube state
-      document.querySelectorAll(".move-chip").forEach((c) => c.classList.remove("active"));
-      chip.classList.add("active");
-      updateHud(i, m);
-      showTeach(m);
-      updateStagePill(i);
-    });
+    chip.addEventListener("click", () => jumpToMove(i));
     movesEl.appendChild(chip);
   });
-}
-
-function updateStagePill(index) {
-  const pill = document.getElementById("stage-pill");
-  const st = stageAtIndex(lastSolution?.stages, index);
-  if (st) {
-    pill.hidden = false;
-    pill.textContent = `Stage: ${st.name}`;
-  }
 }
 
 function enablePlayback(on) {
@@ -535,16 +502,17 @@ function enablePlayback(on) {
   });
 }
 
-function updateHud(i, mv) {
+/** Compact step counter only — no how-to text (cube animation is enough). */
+function updateHud(stepIndex) {
   const hud = document.getElementById("move-hud");
+  const total = lastSolution?.move_count || 0;
+  if (!total) {
+    hud.hidden = true;
+    return;
+  }
   hud.hidden = false;
-  document.getElementById("hud-face").textContent =
-    window.Cube3D.FACE_NAMES[mv[0]] || mv[0];
-  document.getElementById("hud-move").textContent = mv;
-  document.getElementById("hud-step").textContent =
-    `${i + 1} / ${lastSolution?.move_count || "?"}`;
-  showTeach(mv);
-  updateStagePill(i);
+  const shown = Math.min(Math.max(stepIndex, 0), total);
+  document.getElementById("hud-step").textContent = `${shown} / ${total}`;
 }
 
 function highlightChip(i) {
@@ -553,7 +521,6 @@ function highlightChip(i) {
     c.classList.toggle("done", idx < i);
   });
   const chip = document.querySelector(`.move-chip[data-i="${i}"]`);
-  // Avoid scrollIntoView jumping the whole mobile page
   if (chip && chip.parentElement) {
     const parent = chip.parentElement;
     const left = chip.offsetLeft - parent.clientWidth / 2 + chip.clientWidth / 2;
@@ -561,63 +528,139 @@ function highlightChip(i) {
   }
 }
 
+async function stopPlaybackIfNeeded() {
+  if (window.Cube3D?.playing) {
+    window.Cube3D.stop();
+    await window.Cube3D.waitUntilIdle();
+  }
+}
+
 async function playSolution() {
   if (!lastSolution || !scrambleFacelets) return;
-  window.Cube3D.resume();
-  lastFacelets = scrambleFacelets;
-  playIndex = 0;
-  await window.Cube3D.play(scrambleFacelets, lastSolution.moves, {
-    onStep(i, mv) {
-      playIndex = i;
-      highlightChip(i);
-      updateHud(i, mv);
+
+  // Resume if paused mid-play
+  if (window.Cube3D.playing && window.Cube3D.paused) {
+    window.Cube3D.resume();
+    return;
+  }
+  if (window.Cube3D.playing || playbackBusy) return;
+
+  let startIdx = playIndex;
+  let startState = faceletHistory[startIdx] || lastFacelets || scrambleFacelets;
+
+  // Finished → restart from scramble
+  if (startIdx >= lastSolution.moves.length) {
+    startIdx = 0;
+    startState = scrambleFacelets;
+    faceletHistory = [scrambleFacelets];
+    playIndex = 0;
+    paintCubeWithUserColors(startState);
+    highlightChip(-1);
+  }
+
+  const remaining = lastSolution.moves.slice(startIdx);
+  if (!remaining.length) return;
+
+  await window.Cube3D.play(startState, remaining, {
+    skipInitialPaint: startIdx > 0,
+    onStep(i) {
+      const abs = startIdx + i;
+      highlightChip(abs);
+      updateHud(abs + 1);
+    },
+    onAfterMove(i, facelets) {
+      const abs = startIdx + i + 1;
+      playIndex = abs;
+      faceletHistory[abs] = facelets;
+      faceletHistory.length = abs + 1;
+      lastFacelets = facelets;
+      updateHud(abs);
     },
   });
-  playIndex = lastSolution.moves.length;
 }
 
 async function stepForward() {
-  if (!lastSolution || !scrambleFacelets) return;
+  if (!lastSolution || !scrambleFacelets || playbackBusy) return;
   if (playIndex >= lastSolution.moves.length) {
     toast("Solution finished");
     return;
   }
-  const mv = lastSolution.moves[playIndex];
-  updateHud(playIndex, mv);
-  highlightChip(playIndex);
-  lastFacelets = await window.Cube3D.stepOnce(lastFacelets || scrambleFacelets, mv);
-  playIndex += 1;
+  playbackBusy = true;
+  try {
+    await stopPlaybackIfNeeded();
+    const mv = lastSolution.moves[playIndex];
+    const from = faceletHistory[playIndex] || lastFacelets || scrambleFacelets;
+    highlightChip(playIndex);
+    updateHud(playIndex + 1);
+    const next = await window.Cube3D.stepOnce(from, mv);
+    playIndex += 1;
+    faceletHistory[playIndex] = next;
+    faceletHistory.length = playIndex + 1;
+    lastFacelets = next;
+    updateHud(playIndex);
+  } finally {
+    playbackBusy = false;
+  }
 }
 
 async function stepBack() {
-  if (!lastSolution || !scrambleFacelets) return;
+  if (!lastSolution || !scrambleFacelets || playbackBusy) return;
   if (playIndex <= 0) {
     toast("Already at the start");
     return;
   }
-  // Rebuild state by replaying moves 0..playIndex-2
-  const target = playIndex - 1;
-  window.Cube3D.stop();
-  let state = scrambleFacelets;
-  paintCubeWithUserColors(state);
-  for (let i = 0; i < target; i++) {
-    state = await fetchApply(state, [lastSolution.moves[i]]);
+  playbackBusy = true;
+  try {
+    await stopPlaybackIfNeeded();
+    const target = playIndex - 1;
+    // Prefer cached history (instant). Rebuild once if missing.
+    let state = faceletHistory[target];
+    if (!state) {
+      state = await fetchApply(scrambleFacelets, lastSolution.moves.slice(0, target));
+      faceletHistory[target] = state;
+    }
+    playIndex = target;
+    lastFacelets = state;
+    paintCubeWithUserColors(state);
+    if (target > 0) {
+      highlightChip(target - 1);
+      updateHud(target);
+    } else {
+      document.querySelectorAll(".move-chip").forEach((c) => c.classList.remove("active", "done"));
+      updateHud(0);
+    }
+  } finally {
+    playbackBusy = false;
   }
-  paintCubeWithUserColors(state);
-  lastFacelets = state;
-  playIndex = target;
-  if (target > 0) {
-    const mv = lastSolution.moves[target - 1];
-    highlightChip(target - 1);
-    updateHud(target - 1, mv);
-  } else {
-    document.querySelectorAll(".move-chip").forEach((c) => c.classList.remove("active", "done"));
-    hideTeach();
-    document.getElementById("move-hud").hidden = true;
+}
+
+async function jumpToMove(i) {
+  if (!lastSolution || playbackBusy) return;
+  playbackBusy = true;
+  try {
+    await stopPlaybackIfNeeded();
+    const state = await fetchApply(scrambleFacelets, lastSolution.moves.slice(0, i));
+    playIndex = i;
+    faceletHistory[i] = state;
+    faceletHistory.length = Math.max(faceletHistory.length, i + 1);
+    lastFacelets = state;
+    paintCubeWithUserColors(state);
+    if (i > 0) {
+      highlightChip(i - 1);
+      updateHud(i);
+    } else {
+      document.querySelectorAll(".move-chip").forEach((c) => c.classList.remove("active", "done"));
+      updateHud(0);
+    }
+  } catch (err) {
+    toast(err.message || String(err));
+  } finally {
+    playbackBusy = false;
   }
 }
 
 async function fetchApply(facelets, moves) {
+  if (!moves.length) return facelets;
   const res = await fetch("/api/apply", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -628,23 +671,17 @@ async function fetchApply(facelets, moves) {
   return data.facelets;
 }
 
-function resetPlayback() {
-  window.Cube3D.stop();
-  if (lastSolution && scrambleFacelets) {
-    lastFacelets = scrambleFacelets;
-    paintCubeWithUserColors(scrambleFacelets);
-    playIndex = 0;
-    document.querySelectorAll(".move-chip").forEach((c) => {
-      c.classList.remove("active", "done");
-    });
-    document.getElementById("move-hud").hidden = true;
-    hideTeach();
-    if (lastSolution.stages?.length) {
-      const pill = document.getElementById("stage-pill");
-      pill.hidden = false;
-      pill.textContent = lastSolution.stages.map((s) => s.name).join(" → ");
-    }
-  }
+async function resetPlayback() {
+  if (!lastSolution || !scrambleFacelets) return;
+  await stopPlaybackIfNeeded();
+  lastFacelets = scrambleFacelets;
+  faceletHistory = [scrambleFacelets];
+  playIndex = 0;
+  paintCubeWithUserColors(scrambleFacelets);
+  document.querySelectorAll(".move-chip").forEach((c) => {
+    c.classList.remove("active", "done");
+  });
+  updateHud(0);
 }
 
 async function demoScramble() {
@@ -761,8 +798,8 @@ document.addEventListener("DOMContentLoaded", () => {
   renderFaceGrid();
   wireMethods();
 
-  // Default slow teaching speed
-  window.Cube3D.setSpeed(0.45);
+  // Default playback speed (snappy on mobile)
+  window.Cube3D.setSpeed(0.9);
 
   document.getElementById("btn-solve").addEventListener("click", solve);
   document.getElementById("btn-validate")?.addEventListener("click", checkCube);
@@ -779,19 +816,11 @@ document.addEventListener("DOMContentLoaded", () => {
     reviewState = null;
   });
 
-  document.getElementById("btn-play").addEventListener("click", () => {
-    if (window.Cube3D.playing && window.Cube3D.paused) {
-      window.Cube3D.resume();
-      return;
-    }
-    if (window.Cube3D.playing) return;
-    resetPlayback();
-    playSolution();
-  });
+  document.getElementById("btn-play").addEventListener("click", () => playSolution());
   document.getElementById("btn-pause").addEventListener("click", () => window.Cube3D.pause());
-  document.getElementById("btn-step").addEventListener("click", stepForward);
-  document.getElementById("btn-prev").addEventListener("click", stepBack);
-  document.getElementById("btn-reset").addEventListener("click", resetPlayback);
+  document.getElementById("btn-step").addEventListener("click", () => stepForward());
+  document.getElementById("btn-prev").addEventListener("click", () => stepBack());
+  document.getElementById("btn-reset").addEventListener("click", () => resetPlayback());
 
   const speed = document.getElementById("speed");
   const speedLabel = document.getElementById("speed-label");

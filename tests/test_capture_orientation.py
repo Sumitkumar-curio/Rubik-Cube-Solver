@@ -180,6 +180,31 @@ def test_colors_not_auto_rewritten() -> None:
         ok("app.js does not auto-reconcile colors")
 
 
+def test_playback_ui_is_minimal() -> None:
+    html = (ROOT / "frontend" / "index.html").read_text()
+    app = (ROOT / "frontend" / "app.js").read_text()
+    if "teach-overlay" in html:
+        fail("teach overlay", "teach text overlay should be removed for mobile clarity")
+    else:
+        ok("no teach-overlay in HTML")
+    if "hold-banner" in html:
+        fail("hold banner", "hold banner text should be removed")
+    else:
+        ok("no hold-banner in HTML")
+    if "stat-ms" in html or 'id="notes"' in html:
+        fail("extra stats", "only move count should remain in result strip")
+    else:
+        ok("result strip is move-count only")
+    if "faceletHistory" not in app:
+        fail("playback history", "Prev needs faceletHistory for fast step-back")
+    else:
+        ok("faceletHistory enables fast Prev")
+    if "resetPlayback()" in app.split("btn-play")[1].split("btn-pause")[0]:
+        fail("play resets", "Play must not call resetPlayback (breaks Pause→Play)")
+    else:
+        ok("Play does not force reset")
+
+
 def test_3d_keeps_user_sticker_colors() -> None:
     """Solve must paint with captured center colors, not default white-top scheme."""
     app = (ROOT / "frontend" / "app.js").read_text()
@@ -283,6 +308,8 @@ def main() -> int:
     print("=== Color safety ===")
     test_colors_not_auto_rewritten()
     test_3d_keeps_user_sticker_colors()
+    print("=== Playback UI ===")
+    test_playback_ui_is_minimal()
     print("=== Cube validity ===")
     test_solved_and_swapped_lr()
     print("=== Solver smoke ===")

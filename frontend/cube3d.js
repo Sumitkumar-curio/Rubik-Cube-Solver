@@ -274,8 +274,8 @@ class RubiksViewer {
     }
 
     const axis = FACE_AXIS[face].clone();
-    // Base ~700ms at 1× — teaching-friendly; speed slider scales this
-    const duration = (700 / this.speed) * (Math.abs(angle) > 2 ? 1.4 : 1);
+    // Snappier base; speed slider scales this
+    const duration = (420 / this.speed) * (Math.abs(angle) > 2 ? 1.25 : 1);
     const start = performance.now();
     const startQuat = pivot.quaternion.clone();
     const endQuat = new THREE.Quaternion().setFromAxisAngle(axis, angle).multiply(startQuat);
@@ -324,42 +324,51 @@ class RubiksViewer {
     });
   }
 
-  async play(startFacelets, moves, { onStep } = {}) {
+  async play(startFacelets, moves, { onStep, onAfterMove, skipInitialPaint = false } = {}) {
     this._abortPlay = false;
     this.playing = true;
     this.paused = false;
-    this.paint(startFacelets);
+    if (!skipInitialPaint) this.paint(startFacelets);
     let current = startFacelets;
     try {
       for (let i = 0; i < moves.length; i++) {
         while (this.paused && !this._abortPlay) {
-          await sleep(50);
+          await sleep(40);
         }
         if (this._abortPlay) break;
         const mv = moves[i];
         if (onStep) onStep(i, mv, FACE_NAMES[mv[0]] || mv[0]);
         await this.animateMove(mv);
-        // Sync logical state from server for color accuracy every few moves
+        if (this._abortPlay) break;
         current = await applyOnServer(current, [mv]);
-        // Re-paint occasionally to avoid drift (every move is safest for colors)
         this.paint(current);
+        if (onAfterMove) onAfterMove(i, current, mv);
       }
     } finally {
       this.playing = false;
       this.paused = false;
+      this._abortPlay = false;
     }
+    return current;
   }
 
   pause() { this.paused = true; }
-  resume() { this.paused = false; }
+  resume() { this.paused = false; this._abortPlay = false; }
   stop() { this._abortPlay = true; this.paused = false; }
 
   async stepOnce(facelets, move) {
-    this._highlight(move[0], true);
+    this._abortPlay = false;
     await this.animateMove(move);
     const next = await applyOnServer(facelets, [move]);
     this.paint(next);
     return next;
+  }
+
+  async waitUntilIdle() {
+    const t0 = performance.now();
+    while (this.playing && performance.now() - t0 < 8000) {
+      await sleep(40);
+    }
   }
 
   _tick() {
@@ -401,6 +410,7 @@ export function initCube3D(canvasId = "cube-canvas") {
     resetColorScheme: () => viewer.resetColorScheme(),
     getColorScheme: () => ({ ...viewer.letterHex }),
     getFacelets: () => viewer.facelets,
+    waitUntilIdle: () => viewer.waitUntilIdle(),
     get playing() { return viewer.playing; },
     get paused() { return viewer.paused; },
     FACE_NAMES,
