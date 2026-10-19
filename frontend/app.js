@@ -1,8 +1,16 @@
 import { initCube3D } from "./cube3d.js";
 import { showTeach, hideTeach, stageAtIndex } from "./teach.js";
+import { CAPTURE_ORDER, CAPTURE_STEPS, holdReminder } from "./capture-guide.js";
 
-const { FACE_ORDER, FACE_HINTS, COLOR_HEX, readFaceColors, readFaceFromVideo } =
-  window.CubeVision;
+const {
+  FACE_ORDER,
+  FACE_HINTS,
+  COLOR_HEX,
+  readFaceColors,
+  readFaceFromVideo,
+  reconcileAllFaces,
+  validateLocalFaces,
+} = window.CubeVision;
 
 const faces = Object.fromEntries(FACE_ORDER.map((f) => [f, null]));
 let lastSolution = null;
@@ -26,6 +34,36 @@ function toast(msg) {
   toastEl._t = setTimeout(() => {
     toastEl.hidden = true;
   }, 4200);
+}
+
+function showError(msg) {
+  const box = document.getElementById("error-box");
+  if (!msg) {
+    box.hidden = true;
+    box.textContent = "";
+    return;
+  }
+  box.hidden = false;
+  box.textContent = msg;
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function updateStepBanner(face) {
+  const step = CAPTURE_STEPS[face];
+  if (!step) return;
+  const idx = CAPTURE_ORDER.indexOf(face) + 1;
+  document.getElementById("step-num").textContent = `Step ${idx} / 6 · Capture this next`;
+  document.getElementById("step-title").textContent = step.title;
+  document.getElementById("step-how").textContent = `${step.how} ${step.turn}`;
+  document.getElementById("step-top").textContent = `⚠ ${step.photoTop}`;
+}
+
+function nextMissingFace() {
+  return CAPTURE_ORDER.find((f) => !faces[f]) || CAPTURE_ORDER[0];
+}
+
+function refreshWizard() {
+  updateStepBanner(nextMissingFace());
 }
 
 function selectedMethod() {
@@ -85,6 +123,14 @@ function paintMini(f) {
 
 function saveFace(f, colors, previewUrl) {
   faces[f] = colors.slice();
+  // When all 6 present, reconcile global color counts
+  if (allFacesReady()) {
+    const fixed = reconcileAllFaces(faces);
+    FACE_ORDER.forEach((face) => {
+      faces[face] = fixed[face];
+      paintMini(face);
+    });
+  }
   const prev = document.getElementById(`prev-${f}`);
   if (previewUrl) {
     prev.innerHTML = `<img src="${previewUrl}" alt="${f}" />`;
@@ -95,6 +141,8 @@ function saveFace(f, colors, previewUrl) {
   paintMini(f);
   updateSolveBtn();
   syncCubeFromFaces();
+  showError("");
+  refreshWizard();
 }
 
 async function ingestFace(f, fileOrResult, { fromCamera = false } = {}) {
@@ -112,8 +160,10 @@ function openReview(face, colors, previewUrl, fromCamera) {
     fromCamera,
   };
   reviewBrush = "white";
-  document.getElementById("review-face-label").textContent = FACE_HINTS[face];
-  document.getElementById("review-preview").src = previewUrl;
+  const step = CAPTURE_STEPS[face];
+  document.getElementById("review-face-label").textContent =
+    `${FACE_HINTS[face]}${step ? ` · ${step.photoTop}` : ""}`;
+  document.getElementById("review-preview").src = previewUrl || "";
   renderReviewGrid();
   renderReviewPalette();
   document.getElementById("review-modal").hidden = false;
@@ -176,11 +226,15 @@ async function retakeReview() {
 function renderFaceGrid() {
   const grid = document.getElementById("face-grid");
   grid.innerHTML = "";
-  FACE_ORDER.forEach((f) => {
+  // Capture order: F R B L U D (FRONT is home)
+  CAPTURE_ORDER.forEach((f, idx) => {
+    const step = CAPTURE_STEPS[f];
     const card = document.createElement("div");
     card.className = "face-card";
+    card.dataset.face = f;
     card.innerHTML = `
-      <h3>${f} · ${FACE_HINTS[f]}</h3>
+      <h3>${idx + 1}. ${f} · ${FACE_HINTS[f]}</h3>
+      <p class="face-hint">${step.turn}</p>
       <div class="preview" id="prev-${f}">No photo yet</div>
       <div class="mini" id="mini-${f}"></div>
       <div class="face-actions">
@@ -191,7 +245,10 @@ function renderFaceGrid() {
     `;
     grid.appendChild(card);
     paintMini(f);
-    card.querySelector(".up-btn").addEventListener("click", () => card.querySelector("input").click());
+    card.querySelector(".up-btn").addEventListener("click", () => {
+      updateStepBanner(f);
+      card.querySelector("input").click();
+    });
     card.querySelector(".cam-btn").addEventListener("click", () => openCamera(f));
     card.querySelector("input").addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
@@ -199,28 +256,29 @@ function renderFaceGrid() {
       try {
         await ingestFace(f, file, { fromCamera: false });
       } catch (err) {
+        showError(err.message || "Could not read image");
         toast(err.message || "Could not read image");
       }
       e.target.value = "";
     });
 
-    // Tap mini grid to re-edit that face's colors quickly
     card.querySelector(`#mini-${f}`).addEventListener("click", () => {
       if (!faces[f]) return;
       const prevImg = card.querySelector("img");
-      openReview(
-        f,
-        faces[f],
-        prevImg?.src || "",
-        false
-      );
+      openReview(f, faces[f], prevImg?.src || "", false);
     });
   });
+  refreshWizard();
 }
 
 async function openCamera(face) {
   camFace = face;
+  updateStepBanner(face);
+  const step = CAPTURE_STEPS[face];
   document.getElementById("cam-face-label").textContent = FACE_HINTS[face];
+  document.getElementById("cam-orient").textContent = step
+    ? `⚠ ${step.photoTop}`
+    : "Align face in the yellow square";
   document.getElementById("camera-modal").hidden = false;
   await startCamera();
 }
@@ -272,10 +330,54 @@ function methodSolvingText() {
   return "Kociemba two-phase search…";
 }
 
+async function checkCube() {
+  showError("");
+  if (!allFacesReady()) {
+    showError("Capture all 6 faces first (FRONT → RIGHT → BACK → LEFT → UP → DOWN).");
+    return false;
+  }
+  const localErrs = validateLocalFaces(faces);
+  if (localErrs.length) {
+    showError(localErrs.join("\n"));
+    return false;
+  }
+  // Reconcile then validate on server
+  const fixed = reconcileAllFaces(faces);
+  FACE_ORDER.forEach((f) => {
+    faces[f] = fixed[f];
+    paintMini(f);
+  });
+  try {
+    const res = await fetch("/api/validate_colors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ faces }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showError(data.error || "Cube check failed. Fix sticker colors / photo orientation.");
+      return false;
+    }
+    syncCubeFromFaces();
+    toast("Cube looks valid — ready to solve");
+    return true;
+  } catch (err) {
+    showError(err.message || String(err));
+    return false;
+  }
+}
+
 async function solve() {
-  if (!allFacesReady()) return;
+  if (!allFacesReady()) {
+    showError("Capture all 6 faces first.");
+    return;
+  }
+  const ok = await checkCube();
+  if (!ok) return;
+
   setSolving(true, methodSolvingText());
   document.getElementById("btn-solve").disabled = true;
+  showError("");
   try {
     const res = await fetch("/api/solve_colors", {
       method: "POST",
@@ -285,8 +387,9 @@ async function solve() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Solve failed");
     applySolution(data);
-    toast(`Solved in ${data.move_count} moves — use Next step + arrows`);
+    toast(`Solved in ${data.move_count} moves — hold cube as shown, then Next step`);
   } catch (err) {
+    showError(err.message || String(err));
     toast(err.message || String(err));
   } finally {
     setSolving(false);
@@ -303,7 +406,16 @@ function applySolution(data) {
   showResult(data);
   enablePlayback(true);
   hideTeach();
-  // Keep mobile layout stable: resize after DOM updates
+
+  const hold = data.hold || holdReminder(faces);
+  const banner = document.getElementById("hold-banner");
+  if (hold) {
+    banner.hidden = false;
+    banner.textContent = hold.message || hold.text;
+  } else {
+    banner.hidden = true;
+  }
+
   requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
 }
 
@@ -587,6 +699,7 @@ document.addEventListener("DOMContentLoaded", () => {
   window.Cube3D.setSpeed(0.45);
 
   document.getElementById("btn-solve").addEventListener("click", solve);
+  document.getElementById("btn-validate")?.addEventListener("click", checkCube);
   document.getElementById("btn-demo").addEventListener("click", demoScramble);
   document.getElementById("btn-demo-hero")?.addEventListener("click", demoScramble);
   document.getElementById("btn-manual").addEventListener("click", openManual);

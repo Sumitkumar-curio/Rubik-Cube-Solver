@@ -24,6 +24,7 @@ from cube.solver import (  # noqa: E402
 )
 from cube.facecube import colors_to_facelets  # noqa: E402
 from cube.tables import TABLES  # noqa: E402
+from cube.validate import validate_cube_state  # noqa: E402
 
 
 # 0.0.0.0 so cloud hosts / LAN can reach the app; override with HOST / PORT env
@@ -131,6 +132,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_solve(data)
             elif path == "/api/solve_colors":
                 self._handle_solve_colors(data)
+            elif path == "/api/validate_colors":
+                self._handle_validate_colors(data)
             elif path == "/api/apply":
                 facelets = apply_moves(data["facelets"], data.get("moves", []))
                 self._json(200, {"facelets": facelets})
@@ -167,16 +170,43 @@ class Handler(BaseHTTPRequestHandler):
         result = solve_with_method(facelets, method=method, timeout_s=timeout_s)
         self._json(200, self._result_payload(result, result.facelets, method))
 
-    def _handle_solve_colors(self, data: dict) -> None:
+    def _handle_validate_colors(self, data: dict) -> None:
         faces = data.get("faces")
         if not isinstance(faces, dict):
             raise ValueError("Expected {faces: {U:[9], R:[9], ...}}")
         facelets = colors_to_facelets(faces)
-        method = data.get("method", "optimal")
+        err = validate_cube_state(facelets)
+        if err:
+            self._json(400, {"ok": False, "error": err, "facelets": facelets})
+            return
+        self._json(200, {"ok": True, "facelets": facelets})
+
+    def _handle_solve_colors(self, data: dict) -> None:
+        faces = data.get("faces")
+        if not isinstance(faces, dict):
+            raise ValueError("Expected {faces: {U:[9], R:[9], ...}}")
+        try:
+            facelets = colors_to_facelets(faces)
+        except ValueError as e:
+            raise ValueError(str(e)) from e
+        err = validate_cube_state(facelets)
+        if err:
+            raise ValueError(err)
+        method = data.get("method", "kociemba")
         timeout = data.get("timeout")
         timeout_s = float(timeout) if timeout is not None else None
         result = solve_with_method(facelets, method=method, timeout_s=timeout_s)
-        self._json(200, self._result_payload(result, facelets, method))
+        # Include hold reminder colors from centers
+        payload = self._result_payload(result, facelets, method)
+        payload["hold"] = {
+            "up": faces.get("U", [None] * 9)[4],
+            "front": faces.get("F", [None] * 9)[4],
+            "message": (
+                f"Hold cube with {str(faces.get('F', ['?'])[4]).upper()} in FRONT "
+                f"and {str(faces.get('U', ['?'])[4]).upper()} on TOP, then follow the moves."
+            ),
+        }
+        self._json(200, payload)
 
 
 def main() -> None:

@@ -74,27 +74,27 @@
     <aside class="panel capture-panel" id="capture">
       <div class="panel-head">
         <h2>Scan your cube</h2>
-        <p>Hold one orientation for all 6 shots. After capture, tap any wrong sticker to fix it.</p>
+        <p>FRONT is your home face. Follow the steps in order — wrong turns make the solution not match your cube.</p>
       </div>
 
-      <div class="guide-card">
-        <div class="guide-title">Face guide — match these labels</div>
-        <div class="guide-body">
-          <div class="guide-cube" aria-hidden="true">
-            <div class="gc-face gc-u"><span>UP</span><small>Top</small></div>
-            <div class="gc-face gc-f"><span>FRONT</span><small>Facing you</small></div>
-            <div class="gc-face gc-r"><span>RIGHT</span><small>Your right</small></div>
-          </div>
-          <ul class="guide-list">
-            <li><b>U</b> Up / Top</li>
-            <li><b>D</b> Down / Bottom</li>
-            <li><b>F</b> Front</li>
-            <li><b>B</b> Back</li>
-            <li><b>R</b> Right</li>
-            <li><b>L</b> Left</li>
-          </ul>
-        </div>
-        <p class="guide-tip">Tip: white on top, green in front works well. Fill the yellow square with only one face.</p>
+      <div class="guide-card wizard-card" id="wizard-card">
+        <div class="guide-title">How to turn the cube (FRONT = home)</div>
+        <ol class="wizard-steps">
+          <li><b>FRONT</b> — face camera · <em>UP at top of photo</em></li>
+          <li><b>RIGHT</b> — from FRONT, turn <em>anti-clockwise</em> (from above) · UP stays on top</li>
+          <li><b>BACK</b> — turn anti-clockwise once more (FRONT→right→back) · UP on top</li>
+          <li><b>LEFT</b> — from FRONT, turn <em>clockwise</em> · UP on top</li>
+          <li><b>UP</b> — back to FRONT, tip cube <em>away</em> · FRONT edge at <em>bottom</em> of photo</li>
+          <li><b>DOWN</b> — back to FRONT, tip cube <em>toward you</em> · FRONT edge at <em>top</em> of photo</li>
+        </ol>
+        <p class="guide-tip">Fill the yellow square with one face only. After each shot, tap wrong stickers to fix colors.</p>
+      </div>
+
+      <div class="step-banner" id="step-banner">
+        <div class="step-num" id="step-num">Step 1 / 6</div>
+        <div class="step-title" id="step-title">FRONT</div>
+        <p class="step-how" id="step-how"></p>
+        <p class="step-top" id="step-top"></p>
       </div>
 
       <div class="method-block">
@@ -122,10 +122,12 @@
       </div>
 
       <div class="face-grid" id="face-grid"></div>
+      <div class="error-box" id="error-box" hidden></div>
 
       <div class="solve-bar">
         <button type="button" class="btn primary lg" id="btn-solve" disabled>Solve cube</button>
         <button type="button" class="btn ghost" id="btn-manual">Edit all colors</button>
+        <button type="button" class="btn ghost" id="btn-validate">Check cube</button>
       </div>
     </aside>
 
@@ -163,6 +165,7 @@
           <input type="range" id="speed" min="0.15" max="1.5" step="0.05" value="0.45" />
           <span id="speed-label">0.45×</span>
         </div>
+        <div class="hold-banner" id="hold-banner" hidden></div>
         <div class="stage-pill" id="stage-pill" hidden></div>
         <div class="result-strip" id="result-strip" hidden>
           <div class="stat"><span id="stat-moves">0</span> moves</div>
@@ -193,9 +196,11 @@
       <p class="modal-help">
         Fill the <strong>yellow square</strong> with one face only. Hold steady under even light — then capture.
       </p>
+      <p class="cam-orient" id="cam-orient">TOP of photo → UP edge</p>
       <div class="cam-view">
         <video id="cam-video" playsinline autoplay muted></video>
         <div class="cam-grid" aria-hidden="true"></div>
+        <div class="cam-top-label" aria-hidden="true">▲ TOP OF PHOTO</div>
       </div>
       <div class="cam-actions">
         <button type="button" class="btn primary lg" id="cam-shutter">Capture photo</button>

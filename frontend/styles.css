@@ -185,6 +185,57 @@ body {
 .guide-tip {
   margin: 0.75rem 0 0; font-size: 0.8rem; color: var(--muted); line-height: 1.4;
 }
+.wizard-steps {
+  margin: 0; padding-left: 1.15rem; color: var(--muted); font-size: 0.84rem; line-height: 1.45;
+  display: grid; gap: 0.4rem;
+}
+.wizard-steps b { color: var(--accent); }
+.wizard-steps em { color: var(--ink); font-style: normal; font-weight: 600; }
+
+.step-banner {
+  border: 1px solid rgba(126,200,255,0.35);
+  background: rgba(126,200,255,0.08);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.85rem;
+  margin-bottom: 1rem;
+}
+.step-num { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-2); font-weight: 700; }
+.step-title { font-family: var(--font-d); font-size: 1.5rem; letter-spacing: 0.04em; margin: 0.15rem 0; }
+.step-how { margin: 0.25rem 0; color: var(--ink); font-size: 0.9rem; line-height: 1.4; }
+.step-top { margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--accent); font-weight: 600; }
+
+.hold-banner {
+  background: rgba(200,245,66,0.12);
+  border: 1px solid rgba(200,245,66,0.45);
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.9rem; font-weight: 600; line-height: 1.4;
+  color: var(--ink);
+}
+.hold-banner[hidden] { display: none; }
+
+.cam-orient {
+  margin: 0 0 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--accent);
+}
+.cam-top-label {
+  position: absolute; top: 14%; left: 50%; transform: translate(-50%, -120%);
+  font-size: 0.65rem; letter-spacing: 0.08em; font-weight: 700;
+  color: var(--accent); background: rgba(0,0,0,0.55); padding: 0.15rem 0.4rem; border-radius: 4px;
+  z-index: 2; pointer-events: none;
+}
+.error-box {
+  background: rgba(255,107,74,0.12);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  margin: 0.75rem 0;
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.error-box[hidden] { display: none; }
 
 /* Methods */
 .field-label {
@@ -227,8 +278,11 @@ body {
 }
 .face-card.ready { border-color: rgba(200,245,66,0.45); }
 .face-card h3 {
-  margin: 0 0 0.4rem; font-size: 0.72rem; letter-spacing: 0.08em;
+  margin: 0 0 0.25rem; font-size: 0.72rem; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--accent); font-weight: 600;
+}
+.face-hint {
+  margin: 0 0 0.4rem; font-size: 0.72rem; color: var(--muted); line-height: 1.3;
 }
 .face-card .preview {
   width: 100%; aspect-ratio: 1; border-radius: 6px; overflow: hidden;

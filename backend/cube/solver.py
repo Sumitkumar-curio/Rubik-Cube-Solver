@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .defs import MOVE_NAMES, MOVE_AXIS, N_TWIST, N_FLIP, N_CORNERS_PERM, N_UD_EDGES
 from .cubie import CubieCube, MOVE_CUBE, from_facelets, N_SLICE_RAW
 from .tables import TABLES, PHASE2_MOVES
-from .validate import validate_facelets
+from .validate import validate_facelets, validate_cube_state
 
 
 @dataclass
@@ -513,15 +513,12 @@ def solve_optimized(
     algorithm_label: str | None = None,
 ) -> SolveResult:
     """Solve a 54-char facelet cube string; return near-optimal moves."""
-    err = validate_facelets(facelets)
+    err = validate_cube_state(facelets)
     if err:
         raise ValueError(err)
 
     t0 = time.time()
     cc = from_facelets(facelets)
-    verr = cc.verify()
-    if verr:
-        raise ValueError(verr)
 
     # Already solved?
     if facelets == "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB":
