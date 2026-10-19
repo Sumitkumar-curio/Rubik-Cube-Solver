@@ -237,10 +237,33 @@ def test_3d_keeps_user_sticker_colors() -> None:
     else:
         ok("applySolution keeps user sticker colors")
 
+    if "buildFaceletHistory" not in apply_block:
+        fail("applySolution history", "must build whole-sequence faceletHistory")
+    else:
+        ok("applySolution builds whole-sequence faceletHistory")
+
     if "colorSchemeFromFaces" not in app:
         fail("scheme from centers", "missing colorSchemeFromFaces")
     else:
         ok("colorSchemeFromFaces builds scheme from centers")
+
+    # Turns must bake mesh rotation — never paint() after animateMove
+    anim = cube.split("async animateMove")[1].split("async play")[0]
+    if "this.paint(" in anim or ".paint(" in anim:
+        fail("bake turns", "animateMove must not paint() after rotation")
+    else:
+        ok("animateMove bakes turns without repainting")
+
+    if "_bakeCubie" not in cube or "attach(" not in cube:
+        fail("bake API", "need attach + _bakeCubie so stickers stay on pieces")
+    else:
+        ok("cube3d bakes layer turns with attach")
+
+    step = cube.split("async stepOnce")[1].split("async waitUntilIdle")[0]
+    if "this.paint(" in step:
+        fail("stepOnce paint", "stepOnce must not paint after a turn")
+    else:
+        ok("stepOnce does not repaint stickers")
 
     # Contract: yellow-on-top cube must map U → yellow hex, not white
     vision = (ROOT / "frontend" / "vision.js").read_text()

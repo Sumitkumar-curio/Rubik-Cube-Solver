@@ -1,4 +1,4 @@
-import { initCube3D } from "./cube3d.js";
+import { initCube3D, buildFaceletHistory, applyMovesLocal } from "./cube3d.js";
 import { CAPTURE_ORDER, CAPTURE_STEPS } from "./capture-guide.js";
 import { buildGuideCube, playGuideSequence } from "./guide-cube.js";
 
@@ -469,9 +469,10 @@ function applySolution(data) {
   lastFacelets = data.facelets;
   lastSolution = data;
   playIndex = 0;
-  faceletHistory = [data.facelets];
   playbackBusy = false;
-  // Keep user's real sticker colors (not the default white-top scheme)
+  // Whole solve sequence as facelet states — used by Play/Next/Prev/Reset
+  faceletHistory = buildFaceletHistory(data.facelets, data.moves || []);
+  // Paint once with the user's captured colors. Turns only rotate meshes after this.
   paintCubeWithUserColors(data.facelets);
   showResult(data);
   enablePlayback(true);
@@ -548,11 +549,11 @@ async function playSolution() {
   let startIdx = playIndex;
   let startState = faceletHistory[startIdx] || lastFacelets || scrambleFacelets;
 
-  // Finished → restart from scramble
+  // Finished → restart from scramble (full repaint once, then bake turns)
   if (startIdx >= lastSolution.moves.length) {
     startIdx = 0;
     startState = scrambleFacelets;
-    faceletHistory = [scrambleFacelets];
+    faceletHistory = buildFaceletHistory(scrambleFacelets, lastSolution.moves || []);
     playIndex = 0;
     paintCubeWithUserColors(startState);
     highlightChip(-1);
@@ -561,6 +562,7 @@ async function playSolution() {
   const remaining = lastSolution.moves.slice(startIdx);
   if (!remaining.length) return;
 
+  // From mid-sequence: keep baked mesh (skipInitialPaint) so colors don't snap.
   await window.Cube3D.play(startState, remaining, {
     skipInitialPaint: startIdx > 0,
     onStep(i) {
@@ -572,7 +574,6 @@ async function playSolution() {
       const abs = startIdx + i + 1;
       playIndex = abs;
       faceletHistory[abs] = facelets;
-      faceletHistory.length = abs + 1;
       lastFacelets = facelets;
       updateHud(abs);
     },
@@ -592,10 +593,10 @@ async function stepForward() {
     const from = faceletHistory[playIndex] || lastFacelets || scrambleFacelets;
     highlightChip(playIndex);
     updateHud(playIndex + 1);
+    // Rotates meshes only — does NOT repaint stickers
     const next = await window.Cube3D.stepOnce(from, mv);
     playIndex += 1;
     faceletHistory[playIndex] = next;
-    faceletHistory.length = playIndex + 1;
     lastFacelets = next;
     updateHud(playIndex);
   } finally {
@@ -613,10 +614,10 @@ async function stepBack() {
   try {
     await stopPlaybackIfNeeded();
     const target = playIndex - 1;
-    // Prefer cached history (instant). Rebuild once if missing.
+    // Rebuild visual from history (paint once — needed when going backward)
     let state = faceletHistory[target];
     if (!state) {
-      state = await fetchApply(scrambleFacelets, lastSolution.moves.slice(0, target));
+      state = applyMovesLocal(scrambleFacelets, lastSolution.moves.slice(0, target));
       faceletHistory[target] = state;
     }
     playIndex = target;
@@ -639,10 +640,10 @@ async function jumpToMove(i) {
   playbackBusy = true;
   try {
     await stopPlaybackIfNeeded();
-    const state = await fetchApply(scrambleFacelets, lastSolution.moves.slice(0, i));
+    const state = faceletHistory[i]
+      || applyMovesLocal(scrambleFacelets, lastSolution.moves.slice(0, i));
     playIndex = i;
     faceletHistory[i] = state;
-    faceletHistory.length = Math.max(faceletHistory.length, i + 1);
     lastFacelets = state;
     paintCubeWithUserColors(state);
     if (i > 0) {
@@ -659,23 +660,11 @@ async function jumpToMove(i) {
   }
 }
 
-async function fetchApply(facelets, moves) {
-  if (!moves.length) return facelets;
-  const res = await fetch("/api/apply", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ facelets, moves }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Apply failed");
-  return data.facelets;
-}
-
 async function resetPlayback() {
   if (!lastSolution || !scrambleFacelets) return;
   await stopPlaybackIfNeeded();
   lastFacelets = scrambleFacelets;
-  faceletHistory = [scrambleFacelets];
+  faceletHistory = buildFaceletHistory(scrambleFacelets, lastSolution.moves || []);
   playIndex = 0;
   paintCubeWithUserColors(scrambleFacelets);
   document.querySelectorAll(".move-chip").forEach((c) => {
@@ -689,6 +678,8 @@ async function demoScramble() {
   try {
     const res = await fetch("/api/scramble");
     const data = await res.json();
+    // Western demo colors — same bake-rotation path as a real solve
+    window.Cube3D.resetColorScheme?.();
     FACE_ORDER.forEach((f, fi) => {
       const slice = data.facelets.slice(fi * 9, fi * 9 + 9);
       faces[f] = [...slice].map(letterToColor);
@@ -710,8 +701,7 @@ async function demoScramble() {
     const solved = await solveRes.json();
     if (!solveRes.ok) throw new Error(solved.error || "Solve failed");
     applySolution(solved);
-    toast(`Demo: ${solved.move_count} moves — tap Next step & follow arrows`);
-    // Don't auto-scroll the page on mobile
+    toast(`Demo: ${solved.move_count} moves — Play or Next (colors stay on pieces)`);
   } catch (err) {
     toast(err.message || String(err));
   } finally {

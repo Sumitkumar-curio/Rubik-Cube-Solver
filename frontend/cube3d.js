@@ -1,5 +1,9 @@
 /**
- * Three.js Rubik's cube with layer-turn animation + face highlight.
+ * Three.js Rubik's cube — physical layer turns.
+ *
+ * Stickers are painted ONCE from the user's captured colors, then each move
+ * rotates cubie meshes in place (bake). We never re-paint after a turn —
+ * that was the "colors changing" bug (repaint fought the rotation).
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -41,6 +45,52 @@ const MAT_FACE = ["R", "L", "U", "D", "F", "B"];
 // CW quarter-turn sign around each face's outward axis (Three.js Y-up)
 const CW_SIGN = { U: -1, D: 1, R: -1, L: 1, F: -1, B: 1 };
 
+/**
+ * Facelet source index for a CW quarter turn: new[t] = old[FACELET_SRC_CW[face][t]].
+ * Verified against backend apply_moves for all 18 moves.
+ */
+const FACELET_SRC_CW = {
+  U: [6,3,0,7,4,1,8,5,2,45,46,47,12,13,14,15,16,17,9,10,11,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,18,19,20,39,40,41,42,43,44,36,37,38,48,49,50,51,52,53],
+  R: [0,1,20,3,4,23,6,7,26,15,12,9,16,13,10,17,14,11,18,19,29,21,22,32,24,25,35,27,28,51,30,31,48,33,34,45,36,37,38,39,40,41,42,43,44,8,46,47,5,49,50,2,52,53],
+  F: [0,1,2,3,4,5,44,41,38,6,10,11,7,13,14,8,16,17,24,21,18,25,22,19,26,23,20,15,12,9,30,31,32,33,34,35,36,37,27,39,40,28,42,43,29,45,46,47,48,49,50,51,52,53],
+  D: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,24,25,26,18,19,20,21,22,23,42,43,44,33,30,27,34,31,28,35,32,29,36,37,38,39,40,41,51,52,53,45,46,47,48,49,50,15,16,17],
+  L: [53,1,2,50,4,5,47,7,8,9,10,11,12,13,14,15,16,17,0,19,20,3,22,23,6,25,26,18,28,29,21,31,32,24,34,35,42,39,36,43,40,37,44,41,38,45,46,33,48,49,30,51,52,27],
+  B: [11,14,17,3,4,5,6,7,8,9,10,35,12,13,34,15,16,33,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,36,39,42,2,37,38,1,40,41,0,43,44,51,48,45,52,49,46,53,50,47],
+};
+
+/** Apply one move to a facelet string locally (no network). */
+export function applyMoveLocal(facelets, mv) {
+  if (!facelets || facelets.length !== 54) throw new Error("facelets must be 54 chars");
+  const face = mv[0];
+  const src = FACELET_SRC_CW[face];
+  if (!src) throw new Error(`Unknown move ${mv}`);
+  let turns = 1;
+  if (mv.includes("2")) turns = 2;
+  else if (mv.includes("'")) turns = 3; // CCW = 3× CW
+  let cur = facelets;
+  for (let t = 0; t < turns; t++) {
+    let next = "";
+    for (let i = 0; i < 54; i++) next += cur[src[i]];
+    cur = next;
+  }
+  return cur;
+}
+
+export function applyMovesLocal(facelets, moves) {
+  return (moves || []).reduce((fl, mv) => applyMoveLocal(fl, mv), facelets);
+}
+
+/** Build [start, after1, after2, …] for the whole solution sequence. */
+export function buildFaceletHistory(startFacelets, moves) {
+  const hist = [startFacelets];
+  let cur = startFacelets;
+  for (const mv of moves || []) {
+    cur = applyMoveLocal(cur, mv);
+    hist.push(cur);
+  }
+  return hist;
+}
+
 function parseMove(mv) {
   const face = mv[0];
   let turns = 1;
@@ -48,6 +98,10 @@ function parseMove(mv) {
   let sign = CW_SIGN[face] ?? -1;
   if (mv.includes("'")) sign *= -1;
   return { face, turns, angle: sign * (Math.PI / 2) * turns };
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 class RubiksViewer {
@@ -61,7 +115,6 @@ class RubiksViewer {
     this.paused = false;
     this._abortPlay = false;
     this.cubies = [];
-    this.pivot = null;
     this.onMove = null;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -106,7 +159,6 @@ class RubiksViewer {
   }
 
   _makeMaterials(colors) {
-    // colors: {R,L,U,D,F,B} hex or null for internal
     return MAT_FACE.map((f) => {
       const hex = colors[f];
       if (hex == null) {
@@ -116,6 +168,7 @@ class RubiksViewer {
         color: hex,
         roughness: 0.45,
         metalness: 0.08,
+        emissive: 0x000000,
       });
     });
   }
@@ -137,8 +190,8 @@ class RubiksViewer {
           if (z === -1) colors.B = DEFAULT_LETTER_HEX.B;
           const mesh = new THREE.Mesh(geo, this._makeMaterials(colors));
           mesh.position.set(x * gap, y * gap, z * gap);
-          mesh.userData = { ox: x, oy: y, oz: z };
-          // edge lines
+          // bx/by/bz = birth slot (for paint). ox/oy/oz = current grid (for turns).
+          mesh.userData = { bx: x, by: y, bz: z, ox: x, oy: y, oz: z };
           const edges = new THREE.LineSegments(
             new THREE.EdgesGeometry(geo),
             new THREE.LineBasicMaterial({ color: 0x0a0e0c })
@@ -153,12 +206,10 @@ class RubiksViewer {
 
   /**
    * Paint from 54-char facelet string (URFDLB order).
-   * Maps stickers onto cubie face materials by world position.
+   * ONLY call at scramble start / Reset / jump — never after a turn.
    */
   paint(facelets) {
     this.facelets = facelets;
-    // Reset materials from facelet map for each outer face sticker
-    // Simpler approach: derive color at each cubie face from facelets grid
     const faceMaps = {
       U: facelets.slice(0, 9),
       R: facelets.slice(9, 18),
@@ -168,34 +219,31 @@ class RubiksViewer {
       B: facelets.slice(45, 54),
     };
 
-    // Kociemba face layouts (row-major, looking at that face)
     const idx = (row, col) => row * 3 + col;
+    const gap = 1.02;
 
     for (const mesh of this.cubies) {
-      const x = Math.round(mesh.position.x / 1.02);
-      const y = Math.round(mesh.position.y / 1.02);
-      const z = Math.round(mesh.position.z / 1.02);
-      mesh.position.set(x * 1.02, y * 1.02, z * 1.02);
+      // Always paint on birth slots, then clear baked rotation.
+      // This is how Reset / jump / scramble rebuild a consistent cube.
+      const x = mesh.userData.bx;
+      const y = mesh.userData.by;
+      const z = mesh.userData.bz;
+      mesh.position.set(x * gap, y * gap, z * gap);
       mesh.rotation.set(0, 0, 0);
       mesh.quaternion.identity();
-      mesh.userData = { ox: x, oy: y, oz: z };
+      mesh.userData.ox = x;
+      mesh.userData.oy = y;
+      mesh.userData.oz = z;
 
       const hex = this.letterHex;
       const colors = { R: null, L: null, U: null, D: null, F: null, B: null };
-      // U: looking down, x→right, z→front (bottom of diagram)
       if (y === 1) colors.U = hex[faceMaps.U[idx(z + 1, x + 1)]];
-      // D: looking at D, F is top of face diagram → z=+1 → row 0
       if (y === -1) colors.D = hex[faceMaps.D[idx(1 - z, x + 1)]];
-      // F: x→right, y→up
       if (z === 1) colors.F = hex[faceMaps.F[idx(1 - y, x + 1)]];
-      // B: looking at back, x increases left (so -x), y up
       if (z === -1) colors.B = hex[faceMaps.B[idx(1 - y, 1 - x)]];
-      // R: looking at right, z increases left (F left), y up → col from -z
       if (x === 1) colors.R = hex[faceMaps.R[idx(1 - y, 1 - z)]];
-      // L: looking at left, z increases right (F right), y up
       if (x === -1) colors.L = hex[faceMaps.L[idx(1 - y, z + 1)]];
 
-      // Dispose old materials
       if (Array.isArray(mesh.material)) {
         mesh.material.forEach((m) => m.dispose?.());
       }
@@ -208,9 +256,8 @@ class RubiksViewer {
   }
 
   /**
-   * Map face letters (U/R/F/D/L/B) to real sticker colors.
-   * Pass hex numbers (0xrrggbb) or "#rrggbb" / color-name map via app helper.
-   * Call before paint() so the 3D cube matches the user's physical cube.
+   * Map face letters (U/R/F/D/L/B) to real sticker colors from the user's cube.
+   * Call before paint() so the 3D cube matches the physical cube.
    */
   setColorScheme(letterToHex) {
     if (!letterToHex) {
@@ -236,13 +283,34 @@ class RubiksViewer {
   }
 
   _layerCubies(face) {
-    const axis = face === "U" || face === "D" ? "oy"
-      : face === "R" || face === "L" ? "ox" : "oz";
+    const gap = 1.02;
+    const axis = face === "U" || face === "D" ? "y"
+      : face === "R" || face === "L" ? "x" : "z";
     const val = face === "U" || face === "R" || face === "F" ? 1 : -1;
     return this.cubies.filter((c) => {
-      const p = Math.round(c.position[axis === "ox" ? "x" : axis === "oy" ? "y" : "z"] / 1.02);
-      return p === val;
+      const ud = c.userData || {};
+      const key = axis === "x" ? "ox" : axis === "y" ? "oy" : "oz";
+      if (ud[key] != null) return ud[key] === val;
+      return Math.round(c.position[axis] / gap) === val;
     });
+  }
+
+  /** Snap cubie to grid after a baked turn — keep quaternion (stickers stay put). */
+  _bakeCubie(mesh) {
+    const gap = 1.02;
+    mesh.position.x = Math.round(mesh.position.x / gap) * gap;
+    mesh.position.y = Math.round(mesh.position.y / gap) * gap;
+    mesh.position.z = Math.round(mesh.position.z / gap) * gap;
+    const e = new THREE.Euler().setFromQuaternion(mesh.quaternion, "XYZ");
+    const snap = (r) => Math.round(r / (Math.PI / 2)) * (Math.PI / 2);
+    e.x = snap(e.x);
+    e.y = snap(e.y);
+    e.z = snap(e.z);
+    mesh.quaternion.setFromEuler(e);
+    // Keep birth bx/by/bz; update current ox/oy/oz for the next layer pick.
+    mesh.userData.ox = Math.round(mesh.position.x / gap);
+    mesh.userData.oy = Math.round(mesh.position.y / gap);
+    mesh.userData.oz = Math.round(mesh.position.z / gap);
   }
 
   _highlight(face, on) {
@@ -262,19 +330,22 @@ class RubiksViewer {
     }
   }
 
-  async animateMove(mv) {
+  /**
+   * Animate a face turn and BAKE transforms in place.
+   * Do NOT paint() after — stickers ride with the cubies.
+   */
+  async animateMove(mv, endFacelets = null) {
     const { face, angle } = parseMove(mv);
     this._highlight(face, true);
     const layer = this._layerCubies(face);
     const pivot = new THREE.Group();
     this.cubeRoot.add(pivot);
+    // attach() keeps world transform (add/remove would snap stickers wrong)
     for (const c of layer) {
-      this.cubeRoot.remove(c);
-      pivot.add(c);
+      pivot.attach(c);
     }
 
     const axis = FACE_AXIS[face].clone();
-    // Snappier base; speed slider scales this
     const duration = (420 / this.speed) * (Math.abs(angle) > 2 ? 1.25 : 1);
     const start = performance.now();
     const startQuat = pivot.quaternion.clone();
@@ -289,7 +360,7 @@ class RubiksViewer {
           return;
         }
         const t = Math.min(1, (now - start) / duration);
-        const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        const e = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2;
         pivot.quaternion.slerpQuaternions(startQuat, endQuat, e);
         if (t < 1) requestAnimationFrame(step);
         else {
@@ -298,27 +369,15 @@ class RubiksViewer {
         }
       };
       const finish = () => {
-        // Bake transforms back to cubeRoot
-        const worldPos = new THREE.Vector3();
-        const worldQuat = new THREE.Quaternion();
-        for (const c of [...pivot.children]) {
-          c.getWorldPosition(worldPos);
-          c.getWorldQuaternion(worldQuat);
-          pivot.remove(c);
-          this.cubeRoot.add(c);
-          c.position.copy(worldPos);
-          c.quaternion.copy(worldQuat);
-          // Snap position to grid
-          c.position.x = Math.round(c.position.x / 1.02) * 1.02;
-          c.position.y = Math.round(c.position.y / 1.02) * 1.02;
-          c.position.z = Math.round(c.position.z / 1.02) * 1.02;
-          // Snap rotation to 90°
-          c.rotation.x = Math.round(c.rotation.x / (Math.PI / 2)) * (Math.PI / 2);
-          c.rotation.y = Math.round(c.rotation.y / (Math.PI / 2)) * (Math.PI / 2);
-          c.rotation.z = Math.round(c.rotation.z / (Math.PI / 2)) * (Math.PI / 2);
+        pivot.quaternion.copy(endQuat);
+        for (const c of layer) {
+          this.cubeRoot.attach(c); // bake world pos/rot into cube root
+          this._bakeCubie(c);
         }
         this.cubeRoot.remove(pivot);
         this._highlight(face, false);
+        if (endFacelets) this.facelets = endFacelets;
+        // Never paint() here — stickers already rode with the mesh.
       };
       requestAnimationFrame(step);
     });
@@ -328,6 +387,7 @@ class RubiksViewer {
     this._abortPlay = false;
     this.playing = true;
     this.paused = false;
+    // Full paint ONLY at the start of a play-from-origin sequence
     if (!skipInitialPaint) this.paint(startFacelets);
     let current = startFacelets;
     try {
@@ -337,11 +397,12 @@ class RubiksViewer {
         }
         if (this._abortPlay) break;
         const mv = moves[i];
+        const next = applyMoveLocal(current, mv);
         if (onStep) onStep(i, mv, FACE_NAMES[mv[0]] || mv[0]);
-        await this.animateMove(mv);
+        await this.animateMove(mv, next);
         if (this._abortPlay) break;
-        current = await applyOnServer(current, [mv]);
-        this.paint(current);
+        current = next;
+        this.facelets = current;
         if (onAfterMove) onAfterMove(i, current, mv);
       }
     } finally {
@@ -358,9 +419,8 @@ class RubiksViewer {
 
   async stepOnce(facelets, move) {
     this._abortPlay = false;
-    await this.animateMove(move);
-    const next = await applyOnServer(facelets, [move]);
-    this.paint(next);
+    const next = applyMoveLocal(facelets, move);
+    await this.animateMove(move, next);
     return next;
   }
 
@@ -376,21 +436,6 @@ class RubiksViewer {
     this.renderer.render(this.scene, this.camera);
     requestAnimationFrame(() => this._tick());
   }
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function applyOnServer(facelets, moves) {
-  const res = await fetch("/api/apply", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ facelets, moves }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Apply failed");
-  return data.facelets;
 }
 
 let viewer = null;
@@ -416,7 +461,9 @@ export function initCube3D(canvasId = "cube-canvas") {
     FACE_NAMES,
     SOLVED,
     DEFAULT_LETTER_HEX,
+    applyMoveLocal,
+    applyMovesLocal,
+    buildFaceletHistory,
   };
   return window.Cube3D;
 }
-
