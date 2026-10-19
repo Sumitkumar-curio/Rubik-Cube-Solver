@@ -132,12 +132,9 @@ class RubiksViewer {
     this.controls.maxDistance = 14;
     this.controls.target.set(0, 0, 0);
 
-    const amb = new THREE.AmbientLight(0xffffff, 0.72);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.85);
-    dir.position.set(5, 8, 4);
-    const fill = new THREE.DirectionalLight(0x7ec8ff, 0.25);
-    fill.position.set(-4, -2, -3);
-    this.scene.add(amb, dir, fill);
+    // No directional lights — stickers use unlit materials so rotation
+    // never changes perceived brightness (that looked like “color change”).
+    this.scene.add(new THREE.AmbientLight(0xffffff, 1));
 
     this.cubeRoot = new THREE.Group();
     this.scene.add(this.cubeRoot);
@@ -159,17 +156,16 @@ class RubiksViewer {
   }
 
   _makeMaterials(colors) {
+    // MeshBasicMaterial = flat color, ignores scene lights.
+    // MeshStandardMaterial was shading faces darker/lighter as they turned.
     return MAT_FACE.map((f) => {
       const hex = colors[f];
-      if (hex == null) {
-        return new THREE.MeshBasicMaterial({ color: 0x111111 });
-      }
-      return new THREE.MeshStandardMaterial({
-        color: hex,
-        roughness: 0.45,
-        metalness: 0.08,
-        emissive: 0x000000,
+      const mat = new THREE.MeshBasicMaterial({
+        color: hex == null ? 0x111111 : hex,
       });
+      mat.userData.baseColor = hex == null ? 0x111111 : hex;
+      mat.userData.isSticker = hex != null;
+      return mat;
     });
   }
 
@@ -314,18 +310,19 @@ class RubiksViewer {
   }
 
   _highlight(face, on) {
-    const layer = this._layerCubies(face);
+    const layer = new Set(this._layerCubies(face));
+    const accent = new THREE.Color(0xc8f542);
     for (const mesh of this.cubies) {
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const active = on && layer.has(mesh);
       for (const m of mats) {
-        if (m.emissive) m.emissive.setHex(0x000000);
-      }
-    }
-    if (!on) return;
-    for (const mesh of layer) {
-      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const m of mats) {
-        if (m.emissive) m.emissive.setHex(0x334411);
+        const base = m.userData.baseColor;
+        if (base == null) continue;
+        if (active && m.userData.isSticker) {
+          m.color.setHex(base).lerp(accent, 0.22);
+        } else {
+          m.color.setHex(base);
+        }
       }
     }
   }
