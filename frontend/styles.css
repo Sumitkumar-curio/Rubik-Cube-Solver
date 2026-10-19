@@ -58,10 +58,52 @@ body {
 }
 .brand { display: flex; align-items: baseline; gap: 0.55rem; }
 .brand-name {
-  font-family: var(--font-d); font-size: 2rem; letter-spacing: 0.06em; color: var(--accent); line-height: 1;
+  font-family: var(--font-d); font-size: clamp(1.5rem, 4vw, 2rem); letter-spacing: 0.05em; color: var(--accent); line-height: 1;
 }
-.brand-sub { color: var(--muted); font-size: 0.85rem; }
-.header-actions { display: flex; gap: 0.5rem; align-items: center; }
+.brand-sub { color: var(--muted); font-size: 0.8rem; }
+.header-actions { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+/* Intro before solve */
+.intro {
+  position: relative; z-index: 1;
+  padding: clamp(1.5rem, 4vw, 2.75rem) clamp(1rem, 3vw, 1.75rem);
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(200,245,66,0.06), transparent 70%);
+}
+.intro-inner { max-width: 720px; }
+.intro-kicker {
+  margin: 0 0 0.4rem; font-size: 0.78rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent-2); font-weight: 600;
+}
+.intro h1 {
+  font-family: var(--font-d); font-size: clamp(2.2rem, 6vw, 3.4rem);
+  letter-spacing: 0.03em; margin: 0; font-weight: 400; line-height: 0.95;
+}
+.intro-tagline {
+  margin: 0.45rem 0 0.85rem; font-size: clamp(1.05rem, 2.5vw, 1.25rem);
+  color: var(--accent); font-weight: 600;
+}
+.intro-body { margin: 0 0 1.25rem; color: var(--muted); line-height: 1.55; max-width: 38rem; }
+.intro-points {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 1.25rem;
+}
+.intro-points > div {
+  border-top: 2px solid var(--accent); padding-top: 0.55rem;
+  display: grid; gap: 0.25rem;
+}
+.intro-points strong { font-size: 0.95rem; }
+.intro-points span { font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+.intro-cta { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+
+.site-footer {
+  position: relative; z-index: 1;
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem;
+  padding: 1.25rem clamp(1rem, 3vw, 1.75rem) calc(1.25rem + var(--safe-b));
+  border-top: 1px solid var(--line); color: var(--muted); font-size: 0.88rem;
+}
+.site-footer strong { color: var(--ink); }
+.site-footer > div { display: grid; gap: 0.15rem; }
+.site-footer p { margin: 0; align-self: end; }
 
 .shell {
   position: relative; z-index: 1;
@@ -84,7 +126,7 @@ body {
   padding-bottom: calc(1rem + var(--safe-b));
 }
 
-.panel-head h1 {
+.panel-head h1, .panel-head h2 {
   font-family: var(--font-d); font-size: clamp(1.9rem, 4vw, 2.4rem);
   letter-spacing: 0.03em; margin: 0 0 0.35rem; font-weight: 400;
 }
@@ -197,8 +239,10 @@ body {
 .face-card .preview img { width: 100%; height: 100%; object-fit: cover; }
 .face-card .mini {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin-bottom: 0.45rem;
+  cursor: pointer;
 }
 .face-card .mini span { aspect-ratio: 1; border-radius: 2px; background: #1a221c; }
+.face-card .mini:hover { outline: 1px solid var(--accent-dim); }
 .face-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
 .face-actions button, .face-card .pick {
   width: 100%; background: transparent; border: 1px solid var(--line);
@@ -354,15 +398,40 @@ body {
 }
 #cam-video { width: 100%; height: 100%; object-fit: cover; }
 .cam-grid {
-  pointer-events: none; position: absolute; inset: 12%;
-  border: 2px solid rgba(200,245,66,0.55);
+  pointer-events: none; position: absolute; inset: 14%;
+  border: 3px solid rgba(200,245,66,0.85);
+  border-radius: 6px;
+  box-shadow: 0 0 0 999px rgba(0,0,0,0.45);
   background:
-    linear-gradient(rgba(200,245,66,0.35) 1px, transparent 1px) 0 33% / 100% 1px no-repeat,
-    linear-gradient(rgba(200,245,66,0.35) 1px, transparent 1px) 0 66% / 100% 1px no-repeat,
-    linear-gradient(90deg, rgba(200,245,66,0.35) 1px, transparent 1px) 33% 0 / 1px 100% no-repeat,
-    linear-gradient(90deg, rgba(200,245,66,0.35) 1px, transparent 1px) 66% 0 / 1px 100% no-repeat;
+    linear-gradient(rgba(200,245,66,0.55) 2px, transparent 2px) 0 33% / 100% 2px no-repeat,
+    linear-gradient(rgba(200,245,66,0.55) 2px, transparent 2px) 0 66% / 100% 2px no-repeat,
+    linear-gradient(90deg, rgba(200,245,66,0.55) 2px, transparent 2px) 33% 0 / 2px 100% no-repeat,
+    linear-gradient(90deg, rgba(200,245,66,0.55) 2px, transparent 2px) 66% 0 / 2px 100% no-repeat;
 }
 .cam-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Capture review / tap-to-fix */
+.review-card { width: min(560px, 100%); }
+.review-layout {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem;
+  margin: 0.75rem 0 1rem; align-items: start;
+}
+#review-preview {
+  width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px;
+  border: 1px solid var(--line); background: #0a100d;
+}
+.review-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 0.75rem;
+}
+.review-grid button {
+  aspect-ratio: 1; border: 2px solid rgba(255,255,255,0.15); border-radius: 6px;
+  cursor: pointer; position: relative; padding: 0;
+}
+.review-grid button.selected { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.review-grid button.center-mark::after {
+  content: "C"; position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 0.65rem; font-weight: 700; color: rgba(0,0,0,0.45);
+}
 
 .palette { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 0.6rem 0 0.9rem; }
 .palette button {
@@ -403,6 +472,9 @@ body {
 
 /* Mobile — keep layout stable after demo/solve */
 @media (max-width: 900px) {
+  .intro-points { grid-template-columns: 1fr; }
+  .review-layout { grid-template-columns: 1fr; }
+  .header-actions .btn:nth-child(1) { display: none; }
   .shell {
     grid-template-columns: 1fr;
     min-height: auto;

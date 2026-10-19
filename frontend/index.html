@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1210" />
-  <title>TWENTY — Rubik's Cube Solver</title>
+  <meta name="description" content="Rubik Cube Solver with 3 methods — solve your cube in just 20 moves. Created by Sumit Kumar." />
+  <title>Rubik Cube Solver — 3 Methods · Solve in 20 Moves</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
@@ -27,20 +28,53 @@
 
   <header class="site-header">
     <div class="brand">
-      <span class="brand-name">TWENTY</span>
-      <span class="brand-sub">Cube Solver</span>
+      <span class="brand-name">RUBIK SOLVER</span>
+      <span class="brand-sub">3 methods · ≤20 moves</span>
     </div>
     <nav class="header-actions">
-      <button type="button" class="btn ghost sm" id="btn-demo">Demo scramble</button>
-      <a class="btn ghost sm hide-sm" href="#capture">Capture faces</a>
+      <a class="btn ghost sm" href="#how">How it works</a>
+      <button type="button" class="btn ghost sm" id="btn-demo">Try demo</button>
+      <a class="btn primary sm" href="#capture">Solve now</a>
     </nav>
   </header>
+
+  <!-- Intro / about — before jumping into solve -->
+  <section class="intro" id="how">
+    <div class="intro-inner">
+      <p class="intro-kicker">Created by Sumit Kumar</p>
+      <h1>Rubik Cube Solver with 3 methods</h1>
+      <p class="intro-tagline">Solve your cube in just 20 moves</p>
+      <p class="intro-body">
+        Photograph or upload all six faces of your cube. Our computer finds a short
+        solution — often within God's number (20 face turns) — and shows you each
+        turn with arrows so you can follow along on a real cube.
+      </p>
+      <div class="intro-points">
+        <div>
+          <strong>1. Capture</strong>
+          <span>Align each face in the square guide. Fix any sticker with a tap.</span>
+        </div>
+        <div>
+          <strong>2. Choose a method</strong>
+          <span>Kociemba · IDA* optimal search · CFOP teaching path.</span>
+        </div>
+        <div>
+          <strong>3. Follow the moves</strong>
+          <span>Step through with arrows — CW, CCW, or 180°.</span>
+        </div>
+      </div>
+      <div class="intro-cta">
+        <a class="btn primary lg" href="#capture">Start solving</a>
+        <button type="button" class="btn ghost lg" id="btn-demo-hero">Watch a demo scramble</button>
+      </div>
+    </div>
+  </section>
 
   <main class="shell">
     <aside class="panel capture-panel" id="capture">
       <div class="panel-head">
-        <h1>Scan your cube</h1>
-        <p>Hold the cube as shown, then capture or upload each face.</p>
+        <h2>Scan your cube</h2>
+        <p>Hold one orientation for all 6 shots. After capture, tap any wrong sticker to fix it.</p>
       </div>
 
       <div class="guide-card">
@@ -60,7 +94,7 @@
             <li><b>L</b> Left</li>
           </ul>
         </div>
-        <p class="guide-tip">Tip: keep one orientation for all 6 shots (e.g. white on top, green in front).</p>
+        <p class="guide-tip">Tip: white on top, green in front works well. Fill the yellow square with only one face.</p>
       </div>
 
       <div class="method-block">
@@ -68,21 +102,21 @@
         <div class="method-grid" id="method-grid" role="radiogroup" aria-label="Solve method">
           <label class="method-card selected">
             <input type="radio" name="method" value="kociemba" checked />
-            <span class="m-opt">Option A</span>
+            <span class="m-opt">Method 1</span>
             <span class="m-name">Kociemba Two-Phase</span>
-            <span class="m-meta">Best practical start · ~18–25 turns · not always shortest</span>
+            <span class="m-meta">Best for short solves · often ≤20 moves</span>
           </label>
           <label class="method-card">
             <input type="radio" name="method" value="ida" />
-            <span class="m-opt">Option B</span>
+            <span class="m-opt">Method 2</span>
             <span class="m-name">IDA* + Pattern Databases</span>
-            <span class="m-meta">Aims for optimal ≤20 · heavier compute</span>
+            <span class="m-meta">Aims for optimal · may take longer</span>
           </label>
           <label class="method-card">
             <input type="radio" name="method" value="cfop" />
-            <span class="m-opt">Option C</span>
+            <span class="m-opt">Method 3</span>
             <span class="m-name">CFOP Algorithm Library</span>
-            <span class="m-meta">Cross · F2L · OLL · PLL — teachable, not optimal</span>
+            <span class="m-meta">Human-style · great for learning</span>
           </label>
         </div>
       </div>
@@ -91,20 +125,16 @@
 
       <div class="solve-bar">
         <button type="button" class="btn primary lg" id="btn-solve" disabled>Solve cube</button>
-        <button type="button" class="btn ghost" id="btn-manual">Edit colors</button>
+        <button type="button" class="btn ghost" id="btn-manual">Edit all colors</button>
       </div>
     </aside>
 
     <section class="panel stage-panel">
       <div class="viewer-wrap">
         <canvas id="cube-canvas"></canvas>
-
-        <!-- Teaching arrow overlay -->
         <div class="teach-overlay" id="teach-overlay" hidden>
           <div class="teach-arrow" id="teach-arrow" aria-hidden="true">
-            <svg viewBox="0 0 120 120" id="arrow-svg">
-              <!-- filled by JS -->
-            </svg>
+            <svg viewBox="0 0 120 120" id="arrow-svg"></svg>
           </div>
           <div class="teach-copy">
             <div class="teach-face" id="teach-face">RIGHT</div>
@@ -112,7 +142,6 @@
             <div class="teach-notation" id="teach-notation">R</div>
           </div>
         </div>
-
         <div class="move-hud" id="move-hud" hidden>
           <div class="move-face" id="hud-face">—</div>
           <div class="move-notation" id="hud-move">—</div>
@@ -146,13 +175,24 @@
     </section>
   </main>
 
+  <footer class="site-footer">
+    <div>
+      <strong>Rubik Cube Solver with 3 methods</strong>
+      <span>Solve your cube in just 20 moves</span>
+    </div>
+    <p>Created by <strong>Sumit Kumar</strong></p>
+  </footer>
+
+  <!-- Camera -->
   <div class="modal" id="camera-modal" hidden>
     <div class="modal-card camera-card">
       <header>
         <h3>Capture <span id="cam-face-label">UP</span></h3>
         <button type="button" class="icon-btn" id="cam-close" aria-label="Close">×</button>
       </header>
-      <p class="modal-help">Fill the frame with the face. Hold steady, then capture.</p>
+      <p class="modal-help">
+        Fill the <strong>yellow square</strong> with one face only. Hold steady under even light — then capture.
+      </p>
       <div class="cam-view">
         <video id="cam-video" playsinline autoplay muted></video>
         <div class="cam-grid" aria-hidden="true"></div>
@@ -162,6 +202,28 @@
         <button type="button" class="btn ghost" id="cam-switch">Flip camera</button>
       </div>
       <canvas id="cam-canvas" hidden></canvas>
+    </div>
+  </div>
+
+  <!-- Review / tap-to-fix colors after capture -->
+  <div class="modal" id="review-modal" hidden>
+    <div class="modal-card review-card">
+      <header>
+        <h3>Check colors — <span id="review-face-label">UP</span></h3>
+        <button type="button" class="icon-btn" id="review-close" aria-label="Close">×</button>
+      </header>
+      <p class="modal-help">Tap any wrong sticker, then pick the correct color below. Center sticker = face color.</p>
+      <div class="review-layout">
+        <img id="review-preview" alt="Captured face" />
+        <div>
+          <div class="review-grid" id="review-grid"></div>
+          <div class="palette" id="review-palette"></div>
+        </div>
+      </div>
+      <div class="cam-actions">
+        <button type="button" class="btn primary lg" id="review-accept">Looks good — save face</button>
+        <button type="button" class="btn ghost" id="review-retake">Retake</button>
+      </div>
     </div>
   </div>
 

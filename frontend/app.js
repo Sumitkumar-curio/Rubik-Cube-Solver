@@ -13,6 +13,9 @@ let brush = "white";
 let camStream = null;
 let camFace = "U";
 let camFacing = "environment";
+/** Pending capture awaiting user review */
+let reviewState = null; // { face, colors, previewUrl, brush, fromCamera }
+let reviewBrush = "white";
 
 const toastEl = document.getElementById("toast");
 
@@ -80,17 +83,94 @@ function paintMini(f) {
   });
 }
 
-async function ingestFace(f, fileOrResult) {
-  const result = fileOrResult.colors
-    ? fileOrResult
-    : await readFaceColors(fileOrResult);
-  faces[f] = result.colors;
+function saveFace(f, colors, previewUrl) {
+  faces[f] = colors.slice();
   const prev = document.getElementById(`prev-${f}`);
-  prev.innerHTML = `<img src="${result.previewUrl}" alt="${f}" />`;
+  if (previewUrl) {
+    prev.innerHTML = `<img src="${previewUrl}" alt="${f}" />`;
+  } else {
+    prev.textContent = "Colors set";
+  }
   prev.closest(".face-card")?.classList.add("ready");
   paintMini(f);
   updateSolveBtn();
   syncCubeFromFaces();
+}
+
+async function ingestFace(f, fileOrResult, { fromCamera = false } = {}) {
+  const result = fileOrResult.colors
+    ? fileOrResult
+    : await readFaceColors(fileOrResult);
+  openReview(f, result.colors, result.previewUrl, fromCamera);
+}
+
+function openReview(face, colors, previewUrl, fromCamera) {
+  reviewState = {
+    face,
+    colors: colors.slice(),
+    previewUrl,
+    fromCamera,
+  };
+  reviewBrush = "white";
+  document.getElementById("review-face-label").textContent = FACE_HINTS[face];
+  document.getElementById("review-preview").src = previewUrl;
+  renderReviewGrid();
+  renderReviewPalette();
+  document.getElementById("review-modal").hidden = false;
+}
+
+function renderReviewPalette() {
+  const palette = document.getElementById("review-palette");
+  palette.innerHTML = "";
+  Object.entries(COLOR_HEX).forEach(([name, hex]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.style.background = hex;
+    b.title = name;
+    if (name === reviewBrush) b.classList.add("selected");
+    b.addEventListener("click", () => {
+      reviewBrush = name;
+      palette.querySelectorAll("button").forEach((x) => x.classList.remove("selected"));
+      b.classList.add("selected");
+    });
+    palette.appendChild(b);
+  });
+}
+
+function renderReviewGrid() {
+  const grid = document.getElementById("review-grid");
+  grid.innerHTML = "";
+  reviewState.colors.forEach((c, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.style.background = COLOR_HEX[c];
+    if (i === 4) btn.classList.add("center-mark");
+    btn.addEventListener("click", () => {
+      reviewState.colors[i] = reviewBrush;
+      btn.style.background = COLOR_HEX[reviewBrush];
+    });
+    grid.appendChild(btn);
+  });
+}
+
+function acceptReview() {
+  if (!reviewState) return;
+  saveFace(reviewState.face, reviewState.colors, reviewState.previewUrl);
+  document.getElementById("review-modal").hidden = true;
+  toast(`${FACE_HINTS[reviewState.face]} saved — tap stickers anytime via Edit`);
+  reviewState = null;
+}
+
+async function retakeReview() {
+  const face = reviewState?.face;
+  const fromCamera = reviewState?.fromCamera;
+  document.getElementById("review-modal").hidden = true;
+  reviewState = null;
+  if (fromCamera && face) {
+    await openCamera(face);
+  } else if (face) {
+    document.getElementById(`file-${face}`)?.click();
+  }
 }
 
 function renderFaceGrid() {
@@ -117,10 +197,23 @@ function renderFaceGrid() {
       const file = e.target.files?.[0];
       if (!file) return;
       try {
-        await ingestFace(f, file);
+        await ingestFace(f, file, { fromCamera: false });
       } catch (err) {
         toast(err.message || "Could not read image");
       }
+      e.target.value = "";
+    });
+
+    // Tap mini grid to re-edit that face's colors quickly
+    card.querySelector(`#mini-${f}`).addEventListener("click", () => {
+      if (!faces[f]) return;
+      const prevImg = card.querySelector("img");
+      openReview(
+        f,
+        faces[f],
+        prevImg?.src || "",
+        false
+      );
     });
   });
 }
@@ -164,10 +257,9 @@ async function captureFromCamera() {
   }
   try {
     const result = await readFaceFromVideo(video);
-    await ingestFace(camFace, result);
     stopCamera();
     document.getElementById("camera-modal").hidden = true;
-    toast(`${FACE_HINTS[camFace]} captured`);
+    openReview(camFace, result.colors, result.previewUrl, true);
   } catch (err) {
     toast(err.message || "Capture failed");
   }
@@ -496,9 +588,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btn-solve").addEventListener("click", solve);
   document.getElementById("btn-demo").addEventListener("click", demoScramble);
+  document.getElementById("btn-demo-hero")?.addEventListener("click", demoScramble);
   document.getElementById("btn-manual").addEventListener("click", openManual);
   document.getElementById("modal-close").addEventListener("click", closeManual);
   document.getElementById("btn-apply-manual").addEventListener("click", closeManual);
+
+  document.getElementById("review-accept").addEventListener("click", acceptReview);
+  document.getElementById("review-retake").addEventListener("click", retakeReview);
+  document.getElementById("review-close").addEventListener("click", () => {
+    document.getElementById("review-modal").hidden = true;
+    reviewState = null;
+  });
 
   document.getElementById("btn-play").addEventListener("click", () => {
     if (window.Cube3D.playing && window.Cube3D.paused) {
