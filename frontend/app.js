@@ -103,11 +103,29 @@ function localColorsToFacelets(faceMap) {
   return out;
 }
 
+/** Face letter → real captured center color (keeps 3D cube matching the physical cube). */
+function colorSchemeFromFaces(faceMap = faces) {
+  const scheme = {};
+  FACE_ORDER.forEach((f) => {
+    const center = faceMap[f]?.[4];
+    if (center && COLOR_HEX[center]) scheme[f] = COLOR_HEX[center];
+  });
+  return scheme;
+}
+
+function paintCubeWithUserColors(facelets) {
+  if (!window.Cube3D) return;
+  if (allFacesReady()) {
+    window.Cube3D.setColorScheme(colorSchemeFromFaces());
+  }
+  window.Cube3D.paint(facelets);
+}
+
 function syncCubeFromFaces() {
   if (!allFacesReady()) return;
   try {
     const fl = localColorsToFacelets(faces);
-    window.Cube3D.paint(fl);
+    paintCubeWithUserColors(fl);
     lastFacelets = fl;
     scrambleFacelets = fl;
   } catch {
@@ -449,7 +467,8 @@ function applySolution(data) {
   lastFacelets = data.facelets;
   lastSolution = data;
   playIndex = 0;
-  window.Cube3D.paint(data.facelets);
+  // Keep user's real sticker colors (not the default white-top scheme)
+  paintCubeWithUserColors(data.facelets);
   showResult(data);
   enablePlayback(true);
   hideTeach();
@@ -580,11 +599,11 @@ async function stepBack() {
   const target = playIndex - 1;
   window.Cube3D.stop();
   let state = scrambleFacelets;
-  window.Cube3D.paint(state);
+  paintCubeWithUserColors(state);
   for (let i = 0; i < target; i++) {
     state = await fetchApply(state, [lastSolution.moves[i]]);
   }
-  window.Cube3D.paint(state);
+  paintCubeWithUserColors(state);
   lastFacelets = state;
   playIndex = target;
   if (target > 0) {
@@ -613,7 +632,7 @@ function resetPlayback() {
   window.Cube3D.stop();
   if (lastSolution && scrambleFacelets) {
     lastFacelets = scrambleFacelets;
-    window.Cube3D.paint(scrambleFacelets);
+    paintCubeWithUserColors(scrambleFacelets);
     playIndex = 0;
     document.querySelectorAll(".move-chip").forEach((c) => {
       c.classList.remove("active", "done");
@@ -644,7 +663,7 @@ async function demoScramble() {
       }
     });
     updateSolveBtn();
-    window.Cube3D.paint(data.facelets);
+    paintCubeWithUserColors(data.facelets);
 
     const solveRes = await fetch("/api/solve", {
       method: "POST",

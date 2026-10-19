@@ -7,13 +7,14 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 const SOLVED = "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB";
 
-const LETTER_HEX = {
-  U: 0xf4f4f0,
-  R: 0xe23b2f,
-  F: 0x2f9e4a,
-  D: 0xf0d24a,
-  L: 0xf07a2e,
-  B: 0x2f6fdb,
+/** Default Western scheme (demo / before user capture). */
+export const DEFAULT_LETTER_HEX = {
+  U: 0xf4f4f0, // white
+  R: 0xe23b2f, // red
+  F: 0x2f9e4a, // green
+  D: 0xf0d24a, // yellow
+  L: 0xf07a2e, // orange
+  B: 0x2f6fdb, // blue
 };
 
 const FACE_AXIS = {
@@ -53,6 +54,8 @@ class RubiksViewer {
   constructor(canvas) {
     this.canvas = canvas;
     this.facelets = SOLVED;
+    /** Face letter → sticker hex; updated from user's captured centers */
+    this.letterHex = { ...DEFAULT_LETTER_HEX };
     this.speed = 1;
     this.playing = false;
     this.paused = false;
@@ -126,12 +129,12 @@ class RubiksViewer {
         for (let z = -1; z <= 1; z++) {
           if (x === 0 && y === 0 && z === 0) continue;
           const colors = { R: null, L: null, U: null, D: null, F: null, B: null };
-          if (x === 1) colors.R = LETTER_HEX.R;
-          if (x === -1) colors.L = LETTER_HEX.L;
-          if (y === 1) colors.U = LETTER_HEX.U;
-          if (y === -1) colors.D = LETTER_HEX.D;
-          if (z === 1) colors.F = LETTER_HEX.F;
-          if (z === -1) colors.B = LETTER_HEX.B;
+          if (x === 1) colors.R = DEFAULT_LETTER_HEX.R;
+          if (x === -1) colors.L = DEFAULT_LETTER_HEX.L;
+          if (y === 1) colors.U = DEFAULT_LETTER_HEX.U;
+          if (y === -1) colors.D = DEFAULT_LETTER_HEX.D;
+          if (z === 1) colors.F = DEFAULT_LETTER_HEX.F;
+          if (z === -1) colors.B = DEFAULT_LETTER_HEX.B;
           const mesh = new THREE.Mesh(geo, this._makeMaterials(colors));
           mesh.position.set(x * gap, y * gap, z * gap);
           mesh.userData = { ox: x, oy: y, oz: z };
@@ -177,21 +180,20 @@ class RubiksViewer {
       mesh.quaternion.identity();
       mesh.userData = { ox: x, oy: y, oz: z };
 
+      const hex = this.letterHex;
       const colors = { R: null, L: null, U: null, D: null, F: null, B: null };
       // U: looking down, x→right, z→front (bottom of diagram)
-      if (y === 1) colors.U = LETTER_HEX[faceMaps.U[idx(z + 1, x + 1)]];
-      // D: looking up from below, x→right, z→back relative to standard? looking at D with F on top of diagram:
-      // Kociemba D: row0 near F → z=+1 is top when looking at D from below with F away... 
-      // Standard: looking at D, F is top of face diagram → z=+1 → row 0
-      if (y === -1) colors.D = LETTER_HEX[faceMaps.D[idx(1 - z, x + 1)]];
+      if (y === 1) colors.U = hex[faceMaps.U[idx(z + 1, x + 1)]];
+      // D: looking at D, F is top of face diagram → z=+1 → row 0
+      if (y === -1) colors.D = hex[faceMaps.D[idx(1 - z, x + 1)]];
       // F: x→right, y→up
-      if (z === 1) colors.F = LETTER_HEX[faceMaps.F[idx(1 - y, x + 1)]];
+      if (z === 1) colors.F = hex[faceMaps.F[idx(1 - y, x + 1)]];
       // B: looking at back, x increases left (so -x), y up
-      if (z === -1) colors.B = LETTER_HEX[faceMaps.B[idx(1 - y, 1 - x)]];
+      if (z === -1) colors.B = hex[faceMaps.B[idx(1 - y, 1 - x)]];
       // R: looking at right, z increases left (F left), y up → col from -z
-      if (x === 1) colors.R = LETTER_HEX[faceMaps.R[idx(1 - y, 1 - z)]];
+      if (x === 1) colors.R = hex[faceMaps.R[idx(1 - y, 1 - z)]];
       // L: looking at left, z increases right (F right), y up
-      if (x === -1) colors.L = LETTER_HEX[faceMaps.L[idx(1 - y, z + 1)]];
+      if (x === -1) colors.L = hex[faceMaps.L[idx(1 - y, z + 1)]];
 
       // Dispose old materials
       if (Array.isArray(mesh.material)) {
@@ -203,6 +205,34 @@ class RubiksViewer {
 
   setSpeed(s) {
     this.speed = Math.max(0.25, Math.min(3, s));
+  }
+
+  /**
+   * Map face letters (U/R/F/D/L/B) to real sticker colors.
+   * Pass hex numbers (0xrrggbb) or "#rrggbb" / color-name map via app helper.
+   * Call before paint() so the 3D cube matches the user's physical cube.
+   */
+  setColorScheme(letterToHex) {
+    if (!letterToHex) {
+      this.letterHex = { ...DEFAULT_LETTER_HEX };
+      return;
+    }
+    const next = { ...DEFAULT_LETTER_HEX };
+    for (const f of FACE_ORDER) {
+      if (letterToHex[f] == null) continue;
+      let v = letterToHex[f];
+      if (typeof v === "string") {
+        v = v.trim();
+        if (v.startsWith("#")) v = parseInt(v.slice(1), 16);
+        else v = parseInt(v, 16);
+      }
+      if (Number.isFinite(v)) next[f] = v;
+    }
+    this.letterHex = next;
+  }
+
+  resetColorScheme() {
+    this.letterHex = { ...DEFAULT_LETTER_HEX };
   }
 
   _layerCubies(face) {
@@ -367,11 +397,15 @@ export function initCube3D(canvasId = "cube-canvas") {
     stop: () => viewer.stop(),
     stepOnce: (...a) => viewer.stepOnce(...a),
     setSpeed: (s) => viewer.setSpeed(s),
+    setColorScheme: (m) => viewer.setColorScheme(m),
+    resetColorScheme: () => viewer.resetColorScheme(),
+    getColorScheme: () => ({ ...viewer.letterHex }),
     getFacelets: () => viewer.facelets,
     get playing() { return viewer.playing; },
     get paused() { return viewer.paused; },
     FACE_NAMES,
     SOLVED,
+    DEFAULT_LETTER_HEX,
   };
   return window.Cube3D;
 }

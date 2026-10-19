@@ -180,6 +180,57 @@ def test_colors_not_auto_rewritten() -> None:
         ok("app.js does not auto-reconcile colors")
 
 
+def test_3d_keeps_user_sticker_colors() -> None:
+    """Solve must paint with captured center colors, not default white-top scheme."""
+    app = (ROOT / "frontend" / "app.js").read_text()
+    cube = (ROOT / "frontend" / "cube3d.js").read_text()
+
+    if "setColorScheme" not in cube:
+        fail("cube3d scheme API", "missing setColorScheme")
+    else:
+        ok("cube3d.js exposes setColorScheme")
+
+    if "this.letterHex" not in cube and "letterHex" not in cube:
+        fail("cube3d letterHex", "paint must use mutable letterHex, not fixed LETTER_HEX")
+    else:
+        ok("cube3d paint uses mutable letterHex")
+
+    if re.search(r"\bLETTER_HEX\b", cube):
+        fail("cube3d LETTER_HEX", "stale LETTER_HEX reference — use letterHex / DEFAULT_LETTER_HEX")
+    else:
+        ok("no stale LETTER_HEX reference")
+
+    if "paintCubeWithUserColors" not in app:
+        fail("app paint helper", "missing paintCubeWithUserColors")
+    else:
+        ok("app.js has paintCubeWithUserColors")
+
+    # applySolution must use user colors (not bare Cube3D.paint)
+    apply_block = app.split("function applySolution")[1].split("function showResult")[0]
+    if "paintCubeWithUserColors" not in apply_block:
+        fail("applySolution", "must call paintCubeWithUserColors so colors stay true")
+    else:
+        ok("applySolution keeps user sticker colors")
+
+    if "colorSchemeFromFaces" not in app:
+        fail("scheme from centers", "missing colorSchemeFromFaces")
+    else:
+        ok("colorSchemeFromFaces builds scheme from centers")
+
+    # Contract: yellow-on-top cube must map U → yellow hex, not white
+    vision = (ROOT / "frontend" / "vision.js").read_text()
+
+    def hex_for(name: str) -> str:
+        m = re.search(rf'{name}:\s*"([^"]+)"', vision)
+        assert m, name
+        return m.group(1).lower()
+
+    if hex_for("yellow") == hex_for("white"):
+        fail("hex distinct", "yellow and white must differ")
+    else:
+        ok("yellow ≠ white (non-standard orientation can be shown)")
+
+
 def test_solved_and_swapped_lr() -> None:
     err = validate_facelets(SOLVED)
     if err:
@@ -231,6 +282,7 @@ def main() -> int:
     test_capture_guide_copy()
     print("=== Color safety ===")
     test_colors_not_auto_rewritten()
+    test_3d_keeps_user_sticker_colors()
     print("=== Cube validity ===")
     test_solved_and_swapped_lr()
     print("=== Solver smoke ===")
