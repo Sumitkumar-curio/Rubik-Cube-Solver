@@ -1,6 +1,7 @@
 import { initCube3D } from "./cube3d.js";
 import { showTeach, hideTeach, stageAtIndex } from "./teach.js";
 import { CAPTURE_ORDER, CAPTURE_STEPS, holdReminder } from "./capture-guide.js";
+import { buildGuideCube, playGuideSequence } from "./guide-cube.js";
 
 const {
   FACE_ORDER,
@@ -8,7 +9,6 @@ const {
   COLOR_HEX,
   readFaceColors,
   readFaceFromVideo,
-  reconcileAllFaces,
   validateLocalFaces,
 } = window.CubeVision;
 
@@ -24,6 +24,11 @@ let camFacing = "environment";
 /** Pending capture awaiting user review */
 let reviewState = null; // { face, colors, previewUrl, brush, fromCamera }
 let reviewBrush = "white";
+/** Face currently shown in the rotate coach */
+let coachFace = "F";
+/** After save, auto-open coach for the next missing face */
+let guidedMode = false;
+let guideBuilt = false;
 
 const toastEl = document.getElementById("toast");
 
@@ -122,15 +127,8 @@ function paintMini(f) {
 }
 
 function saveFace(f, colors, previewUrl) {
+  // Never auto-rewrite colors — what the user saves is what we solve.
   faces[f] = colors.slice();
-  // When all 6 present, reconcile global color counts
-  if (allFacesReady()) {
-    const fixed = reconcileAllFaces(faces);
-    FACE_ORDER.forEach((face) => {
-      faces[face] = fixed[face];
-      paintMini(face);
-    });
-  }
   const prev = document.getElementById(`prev-${f}`);
   if (previewUrl) {
     prev.innerHTML = `<img src="${previewUrl}" alt="${f}" />`;
@@ -205,10 +203,18 @@ function renderReviewGrid() {
 
 function acceptReview() {
   if (!reviewState) return;
-  saveFace(reviewState.face, reviewState.colors, reviewState.previewUrl);
+  const savedFace = reviewState.face;
+  saveFace(savedFace, reviewState.colors, reviewState.previewUrl);
   document.getElementById("review-modal").hidden = true;
-  toast(`${FACE_HINTS[reviewState.face]} saved — tap stickers anytime via Edit`);
+  toast(`${FACE_HINTS[savedFace]} saved — colors stay exactly as you set them`);
   reviewState = null;
+  if (guidedMode && !allFacesReady()) {
+    const next = nextMissingFace();
+    setTimeout(() => openCoach(next), 400);
+  } else if (allFacesReady()) {
+    guidedMode = false;
+    toast("All 6 faces saved — check colors, then Solve");
+  }
 }
 
 async function retakeReview() {
@@ -216,8 +222,8 @@ async function retakeReview() {
   const fromCamera = reviewState?.fromCamera;
   document.getElementById("review-modal").hidden = true;
   reviewState = null;
-  if (fromCamera && face) {
-    await openCamera(face);
+  if (face && fromCamera) {
+    await openCoach(face);
   } else if (face) {
     document.getElementById(`file-${face}`)?.click();
   }
@@ -238,7 +244,7 @@ function renderFaceGrid() {
       <div class="preview" id="prev-${f}">No photo yet</div>
       <div class="mini" id="mini-${f}"></div>
       <div class="face-actions">
-        <button type="button" class="cam-btn" data-face="${f}">Camera</button>
+        <button type="button" class="cam-btn" data-face="${f}">Guide + Camera</button>
         <button type="button" class="up-btn" data-face="${f}">Upload</button>
       </div>
       <input type="file" accept="image/*" id="file-${f}" />
@@ -249,7 +255,7 @@ function renderFaceGrid() {
       updateStepBanner(f);
       card.querySelector("input").click();
     });
-    card.querySelector(".cam-btn").addEventListener("click", () => openCamera(f));
+    card.querySelector(".cam-btn").addEventListener("click", () => openCoach(f));
     card.querySelector("input").addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -271,6 +277,40 @@ function renderFaceGrid() {
   refreshWizard();
 }
 
+async function ensureGuideBuilt() {
+  if (guideBuilt) return;
+  buildGuideCube(document.getElementById("guide3d-root"));
+  guideBuilt = true;
+}
+
+async function openCoach(face) {
+  coachFace = face;
+  guidedMode = true;
+  updateStepBanner(face);
+  await ensureGuideBuilt();
+  const step = CAPTURE_STEPS[face];
+  const idx = CAPTURE_ORDER.indexOf(face) + 1;
+  document.getElementById("coach-heading").textContent =
+    `Step ${idx} / 6 · ${step?.title || FACE_HINTS[face]}`;
+  document.getElementById("coach-help").textContent = step
+    ? `${step.how} ${step.tip || ""}`
+    : "Copy the rotation, then capture.";
+  document.getElementById("coach-check-1").textContent =
+    face === "F"
+      ? "① Hold HOME: pick FRONT toward you, UP on top — remember this forever"
+      : "① Return to HOME first (FRONT toward you, UP on top)";
+  document.getElementById("coach-check-2").textContent =
+    `② Copy the rotation on the cube above → ${step?.turn || ""}`;
+  document.getElementById("coach-check-3").textContent =
+    `③ Fill the yellow square · ${step?.photoTop || "match TOP of photo"}`;
+  document.getElementById("coach-modal").hidden = false;
+  await playGuideSequence(face);
+}
+
+function closeCoach() {
+  document.getElementById("coach-modal").hidden = true;
+}
+
 async function openCamera(face) {
   camFace = face;
   updateStepBanner(face);
@@ -281,6 +321,13 @@ async function openCamera(face) {
     : "Align face in the yellow square";
   document.getElementById("camera-modal").hidden = false;
   await startCamera();
+}
+
+async function startGuidedCapture() {
+  guidedMode = true;
+  const next = nextMissingFace();
+  document.getElementById("capture")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  await openCoach(next);
 }
 
 async function startCamera() {
@@ -338,15 +385,12 @@ async function checkCube() {
   }
   const localErrs = validateLocalFaces(faces);
   if (localErrs.length) {
-    showError(localErrs.join("\n"));
+    showError(
+      localErrs.join("\n") +
+        "\n\nTap a mini face grid to fix stickers yourself — we never change colors automatically."
+    );
     return false;
   }
-  // Reconcile then validate on server
-  const fixed = reconcileAllFaces(faces);
-  FACE_ORDER.forEach((f) => {
-    faces[f] = fixed[f];
-    paintMini(f);
-  });
   try {
     const res = await fetch("/api/validate_colors", {
       method: "POST",
@@ -355,7 +399,10 @@ async function checkCube() {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      showError(data.error || "Cube check failed. Fix sticker colors / photo orientation.");
+      showError(
+        (data.error || "Cube check failed.") +
+          " Fix sticker colors or photo orientation (tap a face mini-grid). Colors are not auto-changed."
+      );
       return false;
     }
     syncCubeFromFaces();
@@ -743,5 +790,21 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("cam-switch").addEventListener("click", async () => {
     camFacing = camFacing === "environment" ? "user" : "environment";
     await startCamera();
+  });
+
+  document.getElementById("btn-guided")?.addEventListener("click", startGuidedCapture);
+  document.getElementById("btn-show-rotate")?.addEventListener("click", () => {
+    openCoach(nextMissingFace());
+  });
+  document.getElementById("coach-close")?.addEventListener("click", closeCoach);
+  document.getElementById("coach-replay")?.addEventListener("click", () => playGuideSequence(coachFace));
+  document.getElementById("coach-camera")?.addEventListener("click", async () => {
+    closeCoach();
+    await openCamera(coachFace);
+  });
+  document.getElementById("coach-upload")?.addEventListener("click", () => {
+    closeCoach();
+    updateStepBanner(coachFace);
+    document.getElementById(`file-${coachFace}`)?.click();
   });
 });

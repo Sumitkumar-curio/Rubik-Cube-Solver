@@ -52,7 +52,7 @@
       <div class="intro-points">
         <div>
           <strong>1. Capture</strong>
-          <span>Align each face in the square guide. Fix any sticker with a tap.</span>
+          <span>Watch the 3D cube rotate, copy that turn, then photograph. Fix stickers with a tap — colors never auto-change.</span>
         </div>
         <div>
           <strong>2. Choose a method</strong>
@@ -77,17 +77,9 @@
         <p>FRONT is your home face. Follow the steps in order — wrong turns make the solution not match your cube.</p>
       </div>
 
-      <div class="guide-card wizard-card" id="wizard-card">
-        <div class="guide-title">How to turn the cube (FRONT = home)</div>
-        <ol class="wizard-steps">
-          <li><b>FRONT</b> — face camera · <em>UP at top of photo</em></li>
-          <li><b>RIGHT</b> — from FRONT, turn <em>anti-clockwise</em> (from above) · UP stays on top</li>
-          <li><b>BACK</b> — turn anti-clockwise once more (FRONT→right→back) · UP on top</li>
-          <li><b>LEFT</b> — from FRONT, turn <em>clockwise</em> · UP on top</li>
-          <li><b>UP</b> — back to FRONT, tip cube <em>away</em> · FRONT edge at <em>bottom</em> of photo</li>
-          <li><b>DOWN</b> — back to FRONT, tip cube <em>toward you</em> · FRONT edge at <em>top</em> of photo</li>
-        </ol>
-        <p class="guide-tip">Fill the yellow square with one face only. After each shot, tap wrong stickers to fix colors.</p>
+      <div class="coach-launch">
+        <button type="button" class="btn primary lg" id="btn-guided">▶ Start guided capture (recommended)</button>
+        <p class="guide-tip">We’ll show a 3D cube, how to rotate it, then open the camera. Your colors will <strong>never</strong> change after you save them.</p>
       </div>
 
       <div class="step-banner" id="step-banner">
@@ -95,6 +87,7 @@
         <div class="step-title" id="step-title">FRONT</div>
         <p class="step-how" id="step-how"></p>
         <p class="step-top" id="step-top"></p>
+        <button type="button" class="btn ghost sm" id="btn-show-rotate">Show rotate guide for this face</button>
       </div>
 
       <div class="method-block">
@@ -185,6 +178,28 @@
     </div>
     <p>Created by <strong>Sumit Kumar</strong></p>
   </footer>
+
+  <!-- Guided rotate coach -->
+  <div class="modal" id="coach-modal" hidden>
+    <div class="modal-card coach-card">
+      <header>
+        <h3 id="coach-heading">Step 1 · FRONT</h3>
+        <button type="button" class="icon-btn" id="coach-close" aria-label="Close">×</button>
+      </header>
+      <p class="modal-help" id="coach-help">Watch the cube, copy the rotation on your real cube, then capture.</p>
+      <div id="guide3d-root"></div>
+      <div class="coach-checklist">
+        <div id="coach-check-1">① Put your cube like HOME (FRONT toward you, UP on top)</div>
+        <div id="coach-check-2">② Copy the rotation shown above</div>
+        <div id="coach-check-3">③ Yellow square = one face only · TOP of photo matches the label</div>
+      </div>
+      <div class="cam-actions">
+        <button type="button" class="btn primary lg" id="coach-camera">I rotated it — open camera</button>
+        <button type="button" class="btn ghost" id="coach-replay">Replay rotation</button>
+        <button type="button" class="btn ghost" id="coach-upload">Upload photo instead</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Camera -->
   <div class="modal" id="camera-modal" hidden>
