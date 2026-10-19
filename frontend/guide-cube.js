@@ -1,20 +1,62 @@
 /**
  * Visual 3D guide cube — shows how to rotate before each capture.
  * Rotations match CAPTURE_STEPS (FRONT = home).
+ *
+ * CSS rotateY uses right-hand rule (thumb UP):
+ *   +90° → LEFT face toward camera
+ *   -90° → RIGHT face toward camera
+ *  ±180° → BACK face toward camera
  */
+export const HOME_RX = -28;
+export const HOME_RY = 32;
+
 export const GUIDE_POSES = {
-  // start / home: show F (green-ish), U on top, R on right
-  home: { rx: -28, ry: 32, label: "HOME — FRONT facing you" },
-  F: { rx: -28, ry: 32, label: "FRONT faces camera", anim: "none" },
-  // anti-clockwise from above → R comes to front: rotate whole cube +90° around Y
-  R: { rx: -28, ry: 122, label: "Turn LEFT (anti-clockwise from above)", anim: "yaw-left" },
-  B: { rx: -28, ry: 212, label: "Turn LEFT again → BACK", anim: "yaw-left" },
-  L: { rx: -28, ry: -58, label: "From HOME turn RIGHT (clockwise)", anim: "yaw-right" },
-  // tip away: U faces camera — rotate around X
-  U: { rx: -100, ry: 32, label: "From HOME tip cube AWAY from you", anim: "tip-away" },
-  // tip toward: D faces camera
-  D: { rx: 55, ry: 32, label: "From HOME tip cube TOWARD you", anim: "tip-toward" },
+  home: { rx: HOME_RX, ry: HOME_RY, label: "HOME — FRONT facing you", anim: "none" },
+  F: { rx: HOME_RX, ry: HOME_RY, label: "FRONT faces camera", anim: "none" },
+  // Clockwise from above → RIGHT to camera (CSS rotateY -90°)
+  R: {
+    rx: HOME_RX,
+    ry: HOME_RY - 90,
+    label: "Turn RIGHT (clockwise from above)",
+    anim: "yaw-right",
+  },
+  // Continue clockwise → BACK
+  B: {
+    rx: HOME_RX,
+    ry: HOME_RY - 180,
+    label: "Turn RIGHT again → BACK",
+    anim: "yaw-right",
+  },
+  // Anti-clockwise from above → LEFT to camera (CSS rotateY +90°)
+  L: {
+    rx: HOME_RX,
+    ry: HOME_RY + 90,
+    label: "From HOME turn LEFT (anti-clockwise)",
+    anim: "yaw-left",
+  },
+  U: {
+    rx: -100,
+    ry: HOME_RY,
+    label: "From HOME tip cube AWAY from you",
+    anim: "tip-away",
+  },
+  D: {
+    rx: 55,
+    ry: HOME_RY,
+    label: "From HOME tip cube TOWARD you",
+    anim: "tip-toward",
+  },
 };
+
+/** Which equatorial face faces the camera for a guide pose (CSS Y delta from HOME). */
+export function cameraFaceForYawDelta(deltaRy) {
+  const n = ((deltaRy % 360) + 360) % 360;
+  if (n === 0) return "F";
+  if (n === 90) return "L";
+  if (n === 180) return "B";
+  if (n === 270) return "R";
+  return null;
+}
 
 export function buildGuideCube(container) {
   container.innerHTML = `
@@ -43,7 +85,6 @@ export function setGuidePose(face, { animate = true } = {}) {
   cube.style.transition = animate ? "transform 0.85s cubic-bezier(.2,.8,.2,1)" : "none";
   cube.style.transform = `rotateX(${pose.rx}deg) rotateY(${pose.ry}deg)`;
 
-  // Highlight target face
   cube.querySelectorAll(".g3-face").forEach((el) => el.classList.remove("lit"));
   const map = { U: "g3-u", D: "g3-d", F: "g3-f", B: "g3-b", R: "g3-r", L: "g3-l" };
   const lit = cube.querySelector(`.${map[face]}`);
@@ -68,7 +109,6 @@ export function setGuidePose(face, { animate = true } = {}) {
 }
 
 export async function playGuideSequence(face) {
-  // Always show home first, then animate to target (multi-step for BACK)
   setGuidePose("home", { animate: false });
   await sleep(450);
   if (face === "F") {
@@ -77,7 +117,7 @@ export async function playGuideSequence(face) {
     return;
   }
   if (face === "B") {
-    // HOME → RIGHT → BACK so the turn is obvious
+    // HOME → RIGHT → BACK (both clockwise)
     setGuidePose("R", { animate: true });
     await sleep(850);
     setGuidePose("B", { animate: true });
