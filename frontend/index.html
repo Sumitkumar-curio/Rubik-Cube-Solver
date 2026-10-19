@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1210" />
+  <title>TWENTY — Rubik's Cube Solver</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="bg" aria-hidden="true">
+    <div class="orb o1"></div>
+    <div class="orb o2"></div>
+    <div class="grid-fade"></div>
+  </div>
+
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-name">TWENTY</span>
+      <span class="brand-sub">Cube Solver</span>
+    </div>
+    <nav class="header-actions">
+      <button type="button" class="btn ghost sm" id="btn-demo">Demo scramble</button>
+      <a class="btn ghost sm hide-sm" href="#capture">Capture faces</a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <aside class="panel capture-panel" id="capture">
+      <div class="panel-head">
+        <h1>Scan your cube</h1>
+        <p>Hold the cube as shown, then capture or upload each face.</p>
+      </div>
+
+      <div class="guide-card">
+        <div class="guide-title">Face guide — match these labels</div>
+        <div class="guide-body">
+          <div class="guide-cube" aria-hidden="true">
+            <div class="gc-face gc-u"><span>UP</span><small>Top</small></div>
+            <div class="gc-face gc-f"><span>FRONT</span><small>Facing you</small></div>
+            <div class="gc-face gc-r"><span>RIGHT</span><small>Your right</small></div>
+          </div>
+          <ul class="guide-list">
+            <li><b>U</b> Up / Top</li>
+            <li><b>D</b> Down / Bottom</li>
+            <li><b>F</b> Front</li>
+            <li><b>B</b> Back</li>
+            <li><b>R</b> Right</li>
+            <li><b>L</b> Left</li>
+          </ul>
+        </div>
+        <p class="guide-tip">Tip: keep one orientation for all 6 shots (e.g. white on top, green in front).</p>
+      </div>
+
+      <div class="method-block">
+        <div class="field-label">Which algorithm?</div>
+        <div class="method-grid" id="method-grid" role="radiogroup" aria-label="Solve method">
+          <label class="method-card selected">
+            <input type="radio" name="method" value="kociemba" checked />
+            <span class="m-opt">Option A</span>
+            <span class="m-name">Kociemba Two-Phase</span>
+            <span class="m-meta">Best practical start · ~18–25 turns · not always shortest</span>
+          </label>
+          <label class="method-card">
+            <input type="radio" name="method" value="ida" />
+            <span class="m-opt">Option B</span>
+            <span class="m-name">IDA* + Pattern Databases</span>
+            <span class="m-meta">Aims for optimal ≤20 · heavier compute</span>
+          </label>
+          <label class="method-card">
+            <input type="radio" name="method" value="cfop" />
+            <span class="m-opt">Option C</span>
+            <span class="m-name">CFOP Algorithm Library</span>
+            <span class="m-meta">Cross · F2L · OLL · PLL — teachable, not optimal</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="face-grid" id="face-grid"></div>
+
+      <div class="solve-bar">
+        <button type="button" class="btn primary lg" id="btn-solve" disabled>Solve cube</button>
+        <button type="button" class="btn ghost" id="btn-manual">Edit colors</button>
+      </div>
+    </aside>
+
+    <section class="panel stage-panel">
+      <div class="viewer-wrap">
+        <canvas id="cube-canvas"></canvas>
+
+        <!-- Teaching arrow overlay -->
+        <div class="teach-overlay" id="teach-overlay" hidden>
+          <div class="teach-arrow" id="teach-arrow" aria-hidden="true">
+            <svg viewBox="0 0 120 120" id="arrow-svg">
+              <!-- filled by JS -->
+            </svg>
+          </div>
+          <div class="teach-copy">
+            <div class="teach-face" id="teach-face">RIGHT</div>
+            <div class="teach-action" id="teach-action">Turn clockwise 90°</div>
+            <div class="teach-notation" id="teach-notation">R</div>
+          </div>
+        </div>
+
+        <div class="move-hud" id="move-hud" hidden>
+          <div class="move-face" id="hud-face">—</div>
+          <div class="move-notation" id="hud-move">—</div>
+          <div class="move-step" id="hud-step"></div>
+        </div>
+        <div class="viewer-hint">Drag to orbit · scroll to zoom</div>
+      </div>
+
+      <div class="playback-dock" id="playback-dock">
+        <div class="dock-row">
+          <button type="button" class="btn primary" id="btn-play" disabled>Play</button>
+          <button type="button" class="btn ghost" id="btn-pause" disabled>Pause</button>
+          <button type="button" class="btn ghost" id="btn-step" disabled>Next step</button>
+          <button type="button" class="btn ghost" id="btn-prev" disabled>Prev</button>
+          <button type="button" class="btn ghost" id="btn-reset" disabled>Reset</button>
+        </div>
+        <div class="dock-row speed-row">
+          <label for="speed">Speed (slower ← → faster)</label>
+          <input type="range" id="speed" min="0.15" max="1.5" step="0.05" value="0.45" />
+          <span id="speed-label">0.45×</span>
+        </div>
+        <div class="stage-pill" id="stage-pill" hidden></div>
+        <div class="result-strip" id="result-strip" hidden>
+          <div class="stat"><span id="stat-moves">0</span> moves</div>
+          <div class="stat"><span id="stat-ms">0</span> ms</div>
+          <div class="stat" id="stat-algo">—</div>
+        </div>
+        <div class="moves-scroll" id="moves"></div>
+        <p class="notes" id="notes"></p>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal" id="camera-modal" hidden>
+    <div class="modal-card camera-card">
+      <header>
+        <h3>Capture <span id="cam-face-label">UP</span></h3>
+        <button type="button" class="icon-btn" id="cam-close" aria-label="Close">×</button>
+      </header>
+      <p class="modal-help">Fill the frame with the face. Hold steady, then capture.</p>
+      <div class="cam-view">
+        <video id="cam-video" playsinline autoplay muted></video>
+        <div class="cam-grid" aria-hidden="true"></div>
+      </div>
+      <div class="cam-actions">
+        <button type="button" class="btn primary lg" id="cam-shutter">Capture photo</button>
+        <button type="button" class="btn ghost" id="cam-switch">Flip camera</button>
+      </div>
+      <canvas id="cam-canvas" hidden></canvas>
+    </div>
+  </div>
+
+  <div class="modal" id="manual-modal" hidden>
+    <div class="modal-card">
+      <header>
+        <h3>Paint stickers</h3>
+        <button type="button" class="icon-btn" id="modal-close" aria-label="Close">×</button>
+      </header>
+      <p class="modal-help">Pick a color, then tap stickers. Centers define each face.</p>
+      <div class="palette" id="palette"></div>
+      <div class="manual-faces" id="manual-faces"></div>
+      <button type="button" class="btn primary" id="btn-apply-manual">Done</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <div class="solving-overlay" id="solving" hidden>
+    <div class="spinner"></div>
+    <p id="solving-text">Searching…</p>
+  </div>
+
+  <script src="/vision.js"></script>
+  <script type="module" src="/cube3d.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

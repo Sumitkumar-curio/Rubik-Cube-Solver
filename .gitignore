@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.DS_Store
+.idea/
+.vscode/
+*.log
+.env
+.env.*
+backend/cube/_cache/
+*.txt
+.pytest_cache/
+node_modules/
