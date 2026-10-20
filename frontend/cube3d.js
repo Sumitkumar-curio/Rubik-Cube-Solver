@@ -278,87 +278,97 @@ class RubiksViewer {
     this.letterHex = { ...DEFAULT_LETTER_HEX };
   }
 
+  /** Pick the 9 cubies on a face using live world positions (reliable after turns). */
   _layerCubies(face) {
     const gap = 1.02;
     const axis = face === "U" || face === "D" ? "y"
       : face === "R" || face === "L" ? "x" : "z";
     const val = face === "U" || face === "R" || face === "F" ? 1 : -1;
+    const world = new THREE.Vector3();
     return this.cubies.filter((c) => {
-      const ud = c.userData || {};
-      const key = axis === "x" ? "ox" : axis === "y" ? "oy" : "oz";
-      if (ud[key] != null) return ud[key] === val;
-      return Math.round(c.position[axis] / gap) === val;
+      c.updateWorldMatrix(true, false);
+      c.getWorldPosition(world);
+      return Math.round(world[axis] / gap) === val;
     });
   }
 
-  /** Snap cubie to grid after a baked turn — keep quaternion (stickers stay put). */
+  /**
+   * Snap position to grid + snap orientation to nearest 90° axes.
+   * IMPORTANT: do NOT snap via Euler XYZ — that corrupts stickers after a few turns
+   * and looks like “colors changing”. Snap the rotation basis instead.
+   */
   _bakeCubie(mesh) {
     const gap = 1.02;
     mesh.position.x = Math.round(mesh.position.x / gap) * gap;
     mesh.position.y = Math.round(mesh.position.y / gap) * gap;
     mesh.position.z = Math.round(mesh.position.z / gap) * gap;
-    const e = new THREE.Euler().setFromQuaternion(mesh.quaternion, "XYZ");
-    const snap = (r) => Math.round(r / (Math.PI / 2)) * (Math.PI / 2);
-    e.x = snap(e.x);
-    e.y = snap(e.y);
-    e.z = snap(e.z);
-    mesh.quaternion.setFromEuler(e);
-    // Keep birth bx/by/bz; update current ox/oy/oz for the next layer pick.
+
+    mesh.updateMatrix();
+    const x = new THREE.Vector3();
+    const y = new THREE.Vector3();
+    const z = new THREE.Vector3();
+    mesh.matrix.extractBasis(x, y, z);
+
+    const snapAxis = (v) => {
+      const ax = Math.abs(v.x);
+      const ay = Math.abs(v.y);
+      const az = Math.abs(v.z);
+      if (ax >= ay && ax >= az) v.set(Math.sign(v.x) || 1, 0, 0);
+      else if (ay >= az) v.set(0, Math.sign(v.y) || 1, 0);
+      else v.set(0, 0, Math.sign(v.z) || 1);
+    };
+    snapAxis(x);
+    snapAxis(y);
+    // Rebuild a right-handed orthonormal basis so stickers stay correct
+    z.crossVectors(x, y).normalize();
+    y.crossVectors(z, x).normalize();
+    const mat = new THREE.Matrix4().makeBasis(x, y, z);
+    mesh.quaternion.setFromRotationMatrix(mat);
+    mesh.rotation.setFromQuaternion(mesh.quaternion);
+
     mesh.userData.ox = Math.round(mesh.position.x / gap);
     mesh.userData.oy = Math.round(mesh.position.y / gap);
     mesh.userData.oz = Math.round(mesh.position.z / gap);
   }
 
-  _highlight(face, on) {
-    const layer = new Set(this._layerCubies(face));
-    const accent = new THREE.Color(0xc8f542);
-    for (const mesh of this.cubies) {
-      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const active = on && layer.has(mesh);
-      for (const m of mats) {
-        const base = m.userData.baseColor;
-        if (base == null) continue;
-        if (active && m.userData.isSticker) {
-          m.color.setHex(base).lerp(accent, 0.22);
-        } else {
-          m.color.setHex(base);
-        }
-      }
-    }
-  }
-
   /**
-   * Animate a face turn and BAKE transforms in place.
-   * Do NOT paint() after — stickers ride with the cubies.
+   * Rotate ONE face only. Materials are never rewritten.
+   * Other cubies stay completely untouched (same colors, same pose).
    */
   async animateMove(mv, endFacelets = null) {
     const { face, angle } = parseMove(mv);
-    this._highlight(face, true);
     const layer = this._layerCubies(face);
+    if (layer.length !== 9) {
+      console.warn(`[Cube3D] expected 9 cubies on ${face}, got ${layer.length}`);
+    }
+
     const pivot = new THREE.Group();
+    pivot.position.set(0, 0, 0);
+    pivot.quaternion.identity();
     this.cubeRoot.add(pivot);
-    // attach() keeps world transform (add/remove would snap stickers wrong)
+
+    // Keep world pose (position + sticker orientation) while parenting to pivot
     for (const c of layer) {
       pivot.attach(c);
     }
 
     const axis = FACE_AXIS[face].clone();
     const duration = (420 / this.speed) * (Math.abs(angle) > 2 ? 1.25 : 1);
-    const start = performance.now();
-    const startQuat = pivot.quaternion.clone();
-    const endQuat = new THREE.Quaternion().setFromAxisAngle(axis, angle).multiply(startQuat);
+    const t0 = performance.now();
+    const q0 = pivot.quaternion.clone();
+    const q1 = new THREE.Quaternion().setFromAxisAngle(axis, angle).multiply(q0);
 
     await new Promise((resolve) => {
       const step = (now) => {
         if (this._abortPlay) {
-          pivot.quaternion.copy(endQuat);
+          pivot.quaternion.copy(q1);
           finish();
           resolve();
           return;
         }
-        const t = Math.min(1, (now - start) / duration);
+        const t = Math.min(1, (now - t0) / duration);
         const e = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2;
-        pivot.quaternion.slerpQuaternions(startQuat, endQuat, e);
+        pivot.quaternion.slerpQuaternions(q0, q1, e);
         if (t < 1) requestAnimationFrame(step);
         else {
           finish();
@@ -366,15 +376,14 @@ class RubiksViewer {
         }
       };
       const finish = () => {
-        pivot.quaternion.copy(endQuat);
+        pivot.quaternion.copy(q1);
+        // Re-parent to cube root — stickers ride with the mesh, no paint()
         for (const c of layer) {
-          this.cubeRoot.attach(c); // bake world pos/rot into cube root
+          this.cubeRoot.attach(c);
           this._bakeCubie(c);
         }
         this.cubeRoot.remove(pivot);
-        this._highlight(face, false);
         if (endFacelets) this.facelets = endFacelets;
-        // Never paint() here — stickers already rode with the mesh.
       };
       requestAnimationFrame(step);
     });

@@ -259,11 +259,33 @@ def test_3d_keeps_user_sticker_colors() -> None:
     else:
         ok("cube3d bakes layer turns with attach")
 
+    # Euler XYZ snap after turns corrupts sticker orientation
+    if "setFromEuler" in anim or "Euler().setFromQuaternion" in cube.split("_bakeCubie")[1].split("_layerCubies")[0] if "_bakeCubie" in cube else "":
+        # check bake body only
+        bake = cube.split("_bakeCubie")[1].split("async animateMove")[0]
+        if "setFromEuler" in bake and "extractBasis" not in bake:
+            fail("bake euler", "do not snap via Euler — use basis snap")
+        else:
+            ok("bake uses basis snap (not Euler)")
+    else:
+        bake = cube.split("_bakeCubie")[1].split("async animateMove")[0]
+        if "extractBasis" in bake or "makeBasis" in bake:
+            ok("bake uses basis snap (not Euler)")
+        elif "setFromEuler" in bake:
+            fail("bake euler", "do not snap via Euler — use basis snap")
+        else:
+            ok("bake uses basis snap (not Euler)")
+
     step = cube.split("async stepOnce")[1].split("async waitUntilIdle")[0]
     if "this.paint(" in step:
         fail("stepOnce paint", "stepOnce must not paint after a turn")
     else:
         ok("stepOnce does not repaint stickers")
+
+    if "MeshBasicMaterial" not in cube:
+        fail("unlit stickers", "stickers must be MeshBasicMaterial so brightness stays flat")
+    else:
+        ok("stickers use unlit MeshBasicMaterial")
 
     # Contract: yellow-on-top cube must map U → yellow hex, not white
     vision = (ROOT / "frontend" / "vision.js").read_text()
