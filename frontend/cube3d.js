@@ -67,12 +67,12 @@ const FACE_NAMES = {
 const MAT_FACE = ["R", "L", "U", "D", "F", "B"];
 
 /**
- * CW quarter-turn around each face's OUTWARD axis (Three.js right-hand).
- * When viewing a face from outside you look against the outward axis, so
- * +angle around the outward axis appears CW. These signs must match
- * FACELET_SRC_CW — the old inverted set left the cube unsolved after Play.
+ * Visual quarter-turn sign around each face's OUTWARD axis (FACE_AXIS).
+ * Verified by simulating paint layout ↔ FACELET_SRC_CW: every face needs -1
+ * so a solver "U" / "R" / … matches the sticker permutation. Wrong signs
+ * leave the 3D cube unsolved after Play even when the algorithm is correct.
  */
-const CW_SIGN = { U: 1, D: -1, R: 1, L: -1, F: 1, B: -1 };
+const CW_SIGN = { U: -1, D: -1, R: -1, L: -1, F: -1, B: -1 };
 
 /**
  * Facelet source index for a CW quarter turn: new[t] = old[FACELET_SRC_CW[face][t]].

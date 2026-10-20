@@ -264,21 +264,20 @@ def test_3d_keeps_user_sticker_colors() -> None:
     else:
         ok("animateMove bakes layer rotation only")
 
-    # CW signs must match facelets so bake reaches solved
+    # CW signs must be -1 on every outward axis (verified vs FACELET_SRC_CW + paint)
     m = re.search(r"const CW_SIGN = \{([^}]+)\}", cube)
     if not m:
         fail("CW_SIGN", "missing CW_SIGN")
     else:
         body = m.group(1)
-        expect = {"U": "1", "D": "-1", "R": "1", "L": "-1", "F": "1", "B": "-1"}
         bad = []
-        for face, sign in expect.items():
-            if not re.search(rf"{face}:\s*{re.escape(sign)}\b", body):
-                bad.append(f"{face}!={sign}")
+        for face in "URFDLB":
+            if not re.search(rf"{face}:\s*-1\b", body):
+                bad.append(face)
         if bad:
-            fail("CW_SIGN direction", "inverted vs facelets: " + ", ".join(bad))
+            fail("CW_SIGN direction", f"need -1 for all faces, bad: {bad}")
         else:
-            ok("CW_SIGN matches facelet CW (cube can reach solved)")
+            ok("CW_SIGN all -1 (matches paint layout ↔ SRC_CW)")
 
     if "paintAbsoluteColors" not in cube or "paintColors" not in cube:
         fail("absolute paint", "need paintAbsoluteColors / paintColors")
