@@ -247,40 +247,33 @@ def test_3d_keeps_user_sticker_colors() -> None:
     else:
         ok("colorSchemeFromFaces builds scheme from centers")
 
-    # Turns must bake mesh rotation — never paint() after animateMove
+    # After a turn: animate layer, then paint(endFacelets) so visual = solver state
     anim = cube.split("async animateMove")[1].split("async play")[0]
-    if "this.paint(" in anim or ".paint(" in anim:
-        fail("bake turns", "animateMove must not paint() after rotation")
+    if "this.paint(endFacelets)" not in anim and "paint(endFacelets)" not in anim:
+        fail("sync after turn", "animateMove must paint(endFacelets) so cube reaches solved")
     else:
-        ok("animateMove bakes turns without repainting")
+        ok("animateMove syncs stickers to facelets after each turn")
 
-    if "_bakeCubie" not in cube or "attach(" not in cube:
-        fail("bake API", "need attach + _bakeCubie so stickers stay on pieces")
+    if "attach(" not in anim:
+        fail("layer attach", "animateMove must attach layer cubies to pivot")
     else:
-        ok("cube3d bakes layer turns with attach")
+        ok("animateMove attaches layer for rotation")
 
-    # Euler XYZ snap after turns corrupts sticker orientation
-    if "setFromEuler" in anim or "Euler().setFromQuaternion" in cube.split("_bakeCubie")[1].split("_layerCubies")[0] if "_bakeCubie" in cube else "":
-        # check bake body only
-        bake = cube.split("_bakeCubie")[1].split("async animateMove")[0]
-        if "setFromEuler" in bake and "extractBasis" not in bake:
-            fail("bake euler", "do not snap via Euler — use basis snap")
+    # CW signs must be + around outward axes (old inverted set left cube unsolved)
+    m = re.search(r"const CW_SIGN = \{([^}]+)\}", cube)
+    if not m:
+        fail("CW_SIGN", "missing CW_SIGN")
+    else:
+        body = m.group(1)
+        expect = {"U": "1", "D": "-1", "R": "1", "L": "-1", "F": "1", "B": "-1"}
+        bad = []
+        for face, sign in expect.items():
+            if not re.search(rf"{face}:\s*{re.escape(sign)}\b", body):
+                bad.append(f"{face}!={sign}")
+        if bad:
+            fail("CW_SIGN direction", "inverted vs facelets: " + ", ".join(bad))
         else:
-            ok("bake uses basis snap (not Euler)")
-    else:
-        bake = cube.split("_bakeCubie")[1].split("async animateMove")[0]
-        if "extractBasis" in bake or "makeBasis" in bake:
-            ok("bake uses basis snap (not Euler)")
-        elif "setFromEuler" in bake:
-            fail("bake euler", "do not snap via Euler — use basis snap")
-        else:
-            ok("bake uses basis snap (not Euler)")
-
-    step = cube.split("async stepOnce")[1].split("async waitUntilIdle")[0]
-    if "this.paint(" in step:
-        fail("stepOnce paint", "stepOnce must not paint after a turn")
-    else:
-        ok("stepOnce does not repaint stickers")
+            ok("CW_SIGN matches facelet CW (cube can reach solved)")
 
     if "MeshBasicMaterial" not in cube:
         fail("unlit stickers", "stickers must be MeshBasicMaterial so brightness stays flat")

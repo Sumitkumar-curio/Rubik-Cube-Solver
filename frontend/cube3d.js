@@ -42,8 +42,13 @@ const FACE_NAMES = {
 // Cubie face materials order: +x -x +y -y +z -z  → R L U D F B
 const MAT_FACE = ["R", "L", "U", "D", "F", "B"];
 
-// CW quarter-turn sign around each face's outward axis (Three.js Y-up)
-const CW_SIGN = { U: -1, D: 1, R: -1, L: 1, F: -1, B: 1 };
+/**
+ * CW quarter-turn around each face's OUTWARD axis (Three.js right-hand).
+ * When viewing a face from outside you look against the outward axis, so
+ * +angle around the outward axis appears CW. These signs must match
+ * FACELET_SRC_CW — the old inverted set left the cube unsolved after Play.
+ */
+const CW_SIGN = { U: 1, D: -1, R: 1, L: -1, F: 1, B: -1 };
 
 /**
  * Facelet source index for a CW quarter turn: new[t] = old[FACELET_SRC_CW[face][t]].
@@ -332,8 +337,9 @@ class RubiksViewer {
   }
 
   /**
-   * Rotate ONE face only. Materials are never rewritten.
-   * Other cubies stay completely untouched (same colors, same pose).
+   * Rotate ONE face to match the solver move, then snap stickers to the
+   * logical facelet state. Same color scheme → colors don't remap; only
+   * which sticker is where updates (so the cube actually reaches solved).
    */
   async animateMove(mv, endFacelets = null) {
     const { face, angle } = parseMove(mv);
@@ -347,7 +353,6 @@ class RubiksViewer {
     pivot.quaternion.identity();
     this.cubeRoot.add(pivot);
 
-    // Keep world pose (position + sticker orientation) while parenting to pivot
     for (const c of layer) {
       pivot.attach(c);
     }
@@ -377,13 +382,17 @@ class RubiksViewer {
       };
       const finish = () => {
         pivot.quaternion.copy(q1);
-        // Re-parent to cube root — stickers ride with the mesh, no paint()
         for (const c of layer) {
           this.cubeRoot.attach(c);
-          this._bakeCubie(c);
         }
         this.cubeRoot.remove(pivot);
-        if (endFacelets) this.facelets = endFacelets;
+        // Authoritative sync: paint logical facelets with the SAME color scheme.
+        // Guarantees the cube is solved after the solution; no Western remap.
+        if (endFacelets) {
+          this.paint(endFacelets);
+        } else {
+          for (const c of layer) this._bakeCubie(c);
+        }
       };
       requestAnimationFrame(step);
     });
