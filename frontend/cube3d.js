@@ -21,6 +21,30 @@ export const DEFAULT_LETTER_HEX = {
   B: 0x2f6fdb, // blue
 };
 
+/** Absolute sticker color names → hex (never remap through U/R/F letters). */
+export const NAME_TO_HEX = {
+  white: 0xf4f4f0,
+  yellow: 0xf0d24a,
+  red: 0xe23b2f,
+  orange: 0xf07a2e,
+  blue: 0x2f6fdb,
+  green: 0x2f9e4a,
+};
+
+const COLOR_ALIASES = {
+  white: "white", w: "white",
+  yellow: "yellow", y: "yellow",
+  red: "red",
+  orange: "orange", o: "orange",
+  blue: "blue",
+  green: "green", g: "green",
+};
+
+export function normalizeColorName(c) {
+  if (c == null) return null;
+  return COLOR_ALIASES[String(c).trim().toLowerCase()] || null;
+}
+
 const FACE_AXIS = {
   U: new THREE.Vector3(0, 1, 0),
   D: new THREE.Vector3(0, -1, 0),
@@ -63,26 +87,35 @@ const FACELET_SRC_CW = {
   B: [11,14,17,3,4,5,6,7,8,9,10,35,12,13,34,15,16,33,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,36,39,42,2,37,38,1,40,41,0,43,44,51,48,45,52,49,46,53,50,47],
 };
 
-/** Apply one move to a facelet string locally (no network). */
-export function applyMoveLocal(facelets, mv) {
-  if (!facelets || facelets.length !== 54) throw new Error("facelets must be 54 chars");
+/** Permute any 54-length array (facelet chars or color names) by one move. */
+export function applyMoveToArray(arr, mv) {
+  if (!arr || arr.length !== 54) throw new Error("need 54 stickers");
   const face = mv[0];
   const src = FACELET_SRC_CW[face];
   if (!src) throw new Error(`Unknown move ${mv}`);
   let turns = 1;
   if (mv.includes("2")) turns = 2;
   else if (mv.includes("'")) turns = 3; // CCW = 3× CW
-  let cur = facelets;
+  let cur = Array.isArray(arr) ? arr.slice() : [...arr];
   for (let t = 0; t < turns; t++) {
-    let next = "";
-    for (let i = 0; i < 54; i++) next += cur[src[i]];
+    const next = new Array(54);
+    for (let i = 0; i < 54; i++) next[i] = cur[src[i]];
     cur = next;
   }
   return cur;
 }
 
+/** Apply one move to a facelet string locally (no network). */
+export function applyMoveLocal(facelets, mv) {
+  return applyMoveToArray([...facelets], mv).join("");
+}
+
 export function applyMovesLocal(facelets, moves) {
   return (moves || []).reduce((fl, mv) => applyMoveLocal(fl, mv), facelets);
+}
+
+export function applyMoveColors(colors54, mv) {
+  return applyMoveToArray(colors54, mv);
 }
 
 /** Build [start, after1, after2, …] for the whole solution sequence. */
@@ -94,6 +127,32 @@ export function buildFaceletHistory(startFacelets, moves) {
     hist.push(cur);
   }
   return hist;
+}
+
+/** Absolute color-name history — used for Prev/Reset without letter remap. */
+export function buildColorHistory(startColors54, moves) {
+  const hist = [startColors54.slice()];
+  let cur = startColors54.slice();
+  for (const mv of moves || []) {
+    cur = applyMoveColors(cur, mv);
+    hist.push(cur.slice());
+  }
+  return hist;
+}
+
+/** faces {U:[9 names],…} → 54 color names in URFDLB order */
+export function facesToColors54(faceMap) {
+  const out = [];
+  for (const f of FACE_ORDER) {
+    const arr = faceMap[f];
+    if (!arr || arr.length !== 9) throw new Error(`Face ${f} needs 9 colors`);
+    for (const c of arr) {
+      const n = normalizeColorName(c);
+      if (!n) throw new Error(`Unknown color '${c}' on ${f}`);
+      out.push(n);
+    }
+  }
+  return out;
 }
 
 function parseMove(mv) {
@@ -206,8 +265,84 @@ class RubiksViewer {
   }
 
   /**
-   * Paint from 54-char facelet string (URFDLB order).
-   * ONLY call at scramble start / Reset / jump — never after a turn.
+   * Core painter: 6 faces × 9 hex colors. Resets cubies to birth slots.
+   * ONLY for scramble start / Reset / jump — NEVER after a live turn
+   * (that rewrote stickers and looked like a “false cube”).
+   */
+  _paintHexFaces(faceHexMaps) {
+    const idx = (row, col) => row * 3 + col;
+    const gap = 1.02;
+
+    for (const mesh of this.cubies) {
+      const x = mesh.userData.bx;
+      const y = mesh.userData.by;
+      const z = mesh.userData.bz;
+      mesh.position.set(x * gap, y * gap, z * gap);
+      mesh.rotation.set(0, 0, 0);
+      mesh.quaternion.identity();
+      mesh.userData.ox = x;
+      mesh.userData.oy = y;
+      mesh.userData.oz = z;
+
+      const colors = { R: null, L: null, U: null, D: null, F: null, B: null };
+      if (y === 1) colors.U = faceHexMaps.U[idx(z + 1, x + 1)];
+      if (y === -1) colors.D = faceHexMaps.D[idx(1 - z, x + 1)];
+      if (z === 1) colors.F = faceHexMaps.F[idx(1 - y, x + 1)];
+      if (z === -1) colors.B = faceHexMaps.B[idx(1 - y, 1 - x)];
+      if (x === 1) colors.R = faceHexMaps.R[idx(1 - y, 1 - z)];
+      if (x === -1) colors.L = faceHexMaps.L[idx(1 - y, z + 1)];
+
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach((m) => m.dispose?.());
+      }
+      mesh.material = this._makeMaterials(colors);
+    }
+  }
+
+  /** Paint 54 absolute color names (URFDLB order) — no letter remap. */
+  paintColors(colors54) {
+    if (!colors54 || colors54.length !== 54) throw new Error("need 54 colors");
+    const names = colors54.map((c, i) => {
+      const n = normalizeColorName(c);
+      if (!n || NAME_TO_HEX[n] == null) throw new Error(`Invalid color at ${i}: ${c}`);
+      return n;
+    });
+    const faceHexMaps = {
+      U: names.slice(0, 9).map((n) => NAME_TO_HEX[n]),
+      R: names.slice(9, 18).map((n) => NAME_TO_HEX[n]),
+      F: names.slice(18, 27).map((n) => NAME_TO_HEX[n]),
+      D: names.slice(27, 36).map((n) => NAME_TO_HEX[n]),
+      L: names.slice(36, 45).map((n) => NAME_TO_HEX[n]),
+      B: names.slice(45, 54).map((n) => NAME_TO_HEX[n]),
+    };
+    this._paintHexFaces(faceHexMaps);
+  }
+
+  /**
+   * Paint from captured absolute color names {U:[9],…}.
+   * This is the real cube — stickers never go through U/R/F letter remap.
+   */
+  paintAbsoluteColors(faceMap) {
+    const cols = facesToColors54(faceMap);
+    // Lock letterHex from centers so any facelet paint stays consistent
+    const centers = {};
+    for (const f of FACE_ORDER) centers[f] = normalizeColorName(faceMap[f][4]);
+    const letterHex = {};
+    for (const f of FACE_ORDER) letterHex[f] = NAME_TO_HEX[centers[f]];
+    this.letterHex = letterHex;
+
+    const colorToFace = {};
+    FACE_ORDER.forEach((face) => { colorToFace[centers[face]] = face; });
+    this.facelets = FACE_ORDER.map((f) =>
+      faceMap[f].map((c) => colorToFace[normalizeColorName(c)]).join("")
+    ).join("");
+
+    this.paintColors(cols);
+  }
+
+  /**
+   * Paint from 54-char facelet string (URFDLB order) using locked letterHex.
+   * Prefer paintAbsoluteColors for the user's photo cube.
    */
   paint(facelets) {
     this.facelets = facelets;
@@ -219,37 +354,12 @@ class RubiksViewer {
       L: facelets.slice(36, 45),
       B: facelets.slice(45, 54),
     };
-
-    const idx = (row, col) => row * 3 + col;
-    const gap = 1.02;
-
-    for (const mesh of this.cubies) {
-      // Always paint on birth slots, then clear baked rotation.
-      // This is how Reset / jump / scramble rebuild a consistent cube.
-      const x = mesh.userData.bx;
-      const y = mesh.userData.by;
-      const z = mesh.userData.bz;
-      mesh.position.set(x * gap, y * gap, z * gap);
-      mesh.rotation.set(0, 0, 0);
-      mesh.quaternion.identity();
-      mesh.userData.ox = x;
-      mesh.userData.oy = y;
-      mesh.userData.oz = z;
-
-      const hex = this.letterHex;
-      const colors = { R: null, L: null, U: null, D: null, F: null, B: null };
-      if (y === 1) colors.U = hex[faceMaps.U[idx(z + 1, x + 1)]];
-      if (y === -1) colors.D = hex[faceMaps.D[idx(1 - z, x + 1)]];
-      if (z === 1) colors.F = hex[faceMaps.F[idx(1 - y, x + 1)]];
-      if (z === -1) colors.B = hex[faceMaps.B[idx(1 - y, 1 - x)]];
-      if (x === 1) colors.R = hex[faceMaps.R[idx(1 - y, 1 - z)]];
-      if (x === -1) colors.L = hex[faceMaps.L[idx(1 - y, z + 1)]];
-
-      if (Array.isArray(mesh.material)) {
-        mesh.material.forEach((m) => m.dispose?.());
-      }
-      mesh.material = this._makeMaterials(colors);
+    const hex = this.letterHex;
+    const faceHexMaps = {};
+    for (const f of FACE_ORDER) {
+      faceHexMaps[f] = [...faceMaps[f]].map((ch) => hex[ch] ?? 0x444444);
     }
+    this._paintHexFaces(faceHexMaps);
   }
 
   setSpeed(s) {
@@ -337,9 +447,9 @@ class RubiksViewer {
   }
 
   /**
-   * Rotate ONE face to match the solver move, then snap stickers to the
-   * logical facelet state. Same color scheme → colors don't remap; only
-   * which sticker is where updates (so the cube actually reaches solved).
+   * Rotate ONE face only. Stickers stay on the cubie materials — we NEVER
+   * paint() here (repainting was the “false cube / random colors” bug).
+   * CW_SIGN matches FACELET_SRC_CW so the cube still reaches solved.
    */
   async animateMove(mv, endFacelets = null) {
     const { face, angle } = parseMove(mv);
@@ -384,25 +494,22 @@ class RubiksViewer {
         pivot.quaternion.copy(q1);
         for (const c of layer) {
           this.cubeRoot.attach(c);
+          this._bakeCubie(c); // keep same materials — only pose updates
         }
         this.cubeRoot.remove(pivot);
-        // Authoritative sync: paint logical facelets with the SAME color scheme.
-        // Guarantees the cube is solved after the solution; no Western remap.
-        if (endFacelets) {
-          this.paint(endFacelets);
-        } else {
-          for (const c of layer) this._bakeCubie(c);
-        }
+        if (endFacelets) this.facelets = endFacelets;
       };
       requestAnimationFrame(step);
     });
   }
 
-  async play(startFacelets, moves, { onStep, onAfterMove, skipInitialPaint = false } = {}) {
+  async play(startFacelets, moves, { onStep, onAfterMove, skipInitialPaint = true } = {}) {
     this._abortPlay = false;
     this.playing = true;
     this.paused = false;
-    // Full paint ONLY at the start of a play-from-origin sequence
+    // Default: do NOT repaint — stickers were set from absolute photo colors.
+    // Only paint(facelets) when caller explicitly sets skipInitialPaint=false
+    // (legacy); that path remaps via letters and must be avoided for user cubes.
     if (!skipInitialPaint) this.paint(startFacelets);
     let current = startFacelets;
     try {
@@ -460,6 +567,8 @@ export function initCube3D(canvasId = "cube-canvas") {
   viewer = new RubiksViewer(canvas);
   window.Cube3D = {
     paint: (f) => viewer.paint(f),
+    paintColors: (c) => viewer.paintColors(c),
+    paintAbsoluteColors: (m) => viewer.paintAbsoluteColors(m),
     play: (...a) => viewer.play(...a),
     pause: () => viewer.pause(),
     resume: () => viewer.resume(),
@@ -476,9 +585,13 @@ export function initCube3D(canvasId = "cube-canvas") {
     FACE_NAMES,
     SOLVED,
     DEFAULT_LETTER_HEX,
+    NAME_TO_HEX,
     applyMoveLocal,
     applyMovesLocal,
+    applyMoveColors,
     buildFaceletHistory,
+    buildColorHistory,
+    facesToColors54,
   };
   return window.Cube3D;
 }

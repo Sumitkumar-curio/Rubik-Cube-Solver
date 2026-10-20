@@ -1,4 +1,10 @@
-import { initCube3D, buildFaceletHistory, applyMovesLocal } from "./cube3d.js";
+import {
+  initCube3D,
+  buildFaceletHistory,
+  buildColorHistory,
+  facesToColors54,
+  applyMovesLocal,
+} from "./cube3d.js";
 import { CAPTURE_ORDER, CAPTURE_STEPS } from "./capture-guide.js";
 import { buildGuideCube, playGuideSequence } from "./guide-cube.js";
 
@@ -18,6 +24,8 @@ let lastFacelets = null;
 let playIndex = 0;
 /** faceletHistory[i] = cube after first i moves applied */
 let faceletHistory = [];
+/** colorHistory[i] = 54 absolute color names after i moves (photo-true) */
+let colorHistory = [];
 let playbackBusy = false;
 let brush = "white";
 let camStream = null;
@@ -115,11 +123,34 @@ function colorSchemeFromFaces(faceMap = faces) {
   return scheme;
 }
 
+/** Paint the real photo colors — never through U/R/F letter remap. */
+function paintUserCubeFromFaces() {
+  if (!window.Cube3D || !allFacesReady()) return;
+  window.Cube3D.paintAbsoluteColors(faces);
+}
+
+function paintCubeAtHistoryIndex(i) {
+  if (!window.Cube3D) return;
+  if (colorHistory[i]) {
+    window.Cube3D.paintColors(colorHistory[i]);
+    return;
+  }
+  // Fallback (should be rare)
+  if (allFacesReady()) paintUserCubeFromFaces();
+  else if (faceletHistory[i]) {
+    window.Cube3D.setColorScheme(colorSchemeFromFaces());
+    window.Cube3D.paint(faceletHistory[i]);
+  }
+}
+
 function paintCubeWithUserColors(facelets) {
   if (!window.Cube3D) return;
+  // Prefer absolute photo colors when we have them
   if (allFacesReady()) {
-    window.Cube3D.setColorScheme(colorSchemeFromFaces());
+    window.Cube3D.paintAbsoluteColors(faces);
+    return;
   }
+  window.Cube3D.setColorScheme(colorSchemeFromFaces());
   window.Cube3D.paint(facelets);
 }
 
@@ -127,7 +158,7 @@ function syncCubeFromFaces() {
   if (!allFacesReady()) return;
   try {
     const fl = localColorsToFacelets(faces);
-    paintCubeWithUserColors(fl);
+    paintUserCubeFromFaces();
     lastFacelets = fl;
     scrambleFacelets = fl;
   } catch {
@@ -470,10 +501,18 @@ function applySolution(data) {
   lastSolution = data;
   playIndex = 0;
   playbackBusy = false;
-  // Whole solve sequence as facelet states — used by Play/Next/Prev/Reset
   faceletHistory = buildFaceletHistory(data.facelets, data.moves || []);
-  // Paint once with the user's captured colors. Turns only rotate meshes after this.
-  paintCubeWithUserColors(data.facelets);
+
+  // Absolute photo colors as the only display truth for Play/Next (rotate only).
+  // Prev/Reset use colorHistory so we never remap stickers through letters.
+  if (!allFacesReady()) {
+    showError("Capture all 6 faces before solving.");
+    return;
+  }
+  const startColors = facesToColors54(faces);
+  colorHistory = buildColorHistory(startColors, data.moves || []);
+  paintUserCubeFromFaces();
+
   showResult(data);
   enablePlayback(true);
   updateHud(0);
@@ -549,22 +588,25 @@ async function playSolution() {
   let startIdx = playIndex;
   let startState = faceletHistory[startIdx] || lastFacelets || scrambleFacelets;
 
-  // Finished → restart from scramble (full repaint once, then bake turns)
+  // Finished → restart from scramble (repaint photo colors once, then rotate only)
   if (startIdx >= lastSolution.moves.length) {
     startIdx = 0;
     startState = scrambleFacelets;
     faceletHistory = buildFaceletHistory(scrambleFacelets, lastSolution.moves || []);
+    if (allFacesReady()) {
+      colorHistory = buildColorHistory(facesToColors54(faces), lastSolution.moves || []);
+    }
     playIndex = 0;
-    paintCubeWithUserColors(startState);
+    paintCubeAtHistoryIndex(0);
     highlightChip(-1);
   }
 
   const remaining = lastSolution.moves.slice(startIdx);
   if (!remaining.length) return;
 
-  // From mid-sequence: keep baked mesh (skipInitialPaint) so colors don't snap.
+  // Mid-sequence: skipInitialPaint — keep baked stickers (no remapping).
   await window.Cube3D.play(startState, remaining, {
-    skipInitialPaint: startIdx > 0,
+    skipInitialPaint: true,
     onStep(i) {
       const abs = startIdx + i;
       highlightChip(abs);
@@ -622,7 +664,8 @@ async function stepBack() {
     }
     playIndex = target;
     lastFacelets = state;
-    paintCubeWithUserColors(state);
+    // Absolute color frame — not letter remapping
+    paintCubeAtHistoryIndex(target);
     if (target > 0) {
       highlightChip(target - 1);
       updateHud(target);
@@ -645,7 +688,7 @@ async function jumpToMove(i) {
     playIndex = i;
     faceletHistory[i] = state;
     lastFacelets = state;
-    paintCubeWithUserColors(state);
+    paintCubeAtHistoryIndex(i);
     if (i > 0) {
       highlightChip(i - 1);
       updateHud(i);
@@ -665,8 +708,11 @@ async function resetPlayback() {
   await stopPlaybackIfNeeded();
   lastFacelets = scrambleFacelets;
   faceletHistory = buildFaceletHistory(scrambleFacelets, lastSolution.moves || []);
+  if (allFacesReady()) {
+    colorHistory = buildColorHistory(facesToColors54(faces), lastSolution.moves || []);
+  }
   playIndex = 0;
-  paintCubeWithUserColors(scrambleFacelets);
+  paintCubeAtHistoryIndex(0);
   document.querySelectorAll(".move-chip").forEach((c) => {
     c.classList.remove("active", "done");
   });

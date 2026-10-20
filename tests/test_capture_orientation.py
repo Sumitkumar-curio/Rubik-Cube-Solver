@@ -230,10 +230,10 @@ def test_3d_keeps_user_sticker_colors() -> None:
     else:
         ok("app.js has paintCubeWithUserColors")
 
-    # applySolution must use user colors (not bare Cube3D.paint)
+    # applySolution must paint absolute photo colors (not letter remap)
     apply_block = app.split("function applySolution")[1].split("function showResult")[0]
-    if "paintCubeWithUserColors" not in apply_block:
-        fail("applySolution", "must call paintCubeWithUserColors so colors stay true")
+    if "paintUserCubeFromFaces" not in apply_block and "paintAbsoluteColors" not in apply_block:
+        fail("applySolution", "must paint absolute photo colors so stickers stay true")
     else:
         ok("applySolution keeps user sticker colors")
 
@@ -242,24 +242,29 @@ def test_3d_keeps_user_sticker_colors() -> None:
     else:
         ok("applySolution builds whole-sequence faceletHistory")
 
+    if "buildColorHistory" not in apply_block and "colorHistory" not in apply_block:
+        fail("applySolution colorHistory", "need absolute colorHistory for Prev/Reset")
+    else:
+        ok("applySolution builds absolute colorHistory")
+
     if "colorSchemeFromFaces" not in app:
         fail("scheme from centers", "missing colorSchemeFromFaces")
     else:
         ok("colorSchemeFromFaces builds scheme from centers")
 
-    # After a turn: animate layer, then paint(endFacelets) so visual = solver state
+    # After a turn: bake only — never paint() (that remapped stickers = false cube)
     anim = cube.split("async animateMove")[1].split("async play")[0]
-    if "this.paint(endFacelets)" not in anim and "paint(endFacelets)" not in anim:
-        fail("sync after turn", "animateMove must paint(endFacelets) so cube reaches solved")
+    if "this.paint(" in anim:
+        fail("no paint after turn", "animateMove must not paint() — stickers stay on pieces")
     else:
-        ok("animateMove syncs stickers to facelets after each turn")
+        ok("animateMove does not remapping-paint after turns")
 
-    if "attach(" not in anim:
-        fail("layer attach", "animateMove must attach layer cubies to pivot")
+    if "_bakeCubie" not in anim or "attach(" not in anim:
+        fail("bake turn", "animateMove must attach + bake cubies")
     else:
-        ok("animateMove attaches layer for rotation")
+        ok("animateMove bakes layer rotation only")
 
-    # CW signs must be + around outward axes (old inverted set left cube unsolved)
+    # CW signs must match facelets so bake reaches solved
     m = re.search(r"const CW_SIGN = \{([^}]+)\}", cube)
     if not m:
         fail("CW_SIGN", "missing CW_SIGN")
@@ -274,6 +279,22 @@ def test_3d_keeps_user_sticker_colors() -> None:
             fail("CW_SIGN direction", "inverted vs facelets: " + ", ".join(bad))
         else:
             ok("CW_SIGN matches facelet CW (cube can reach solved)")
+
+    if "paintAbsoluteColors" not in cube or "paintColors" not in cube:
+        fail("absolute paint", "need paintAbsoluteColors / paintColors")
+    else:
+        ok("absolute color paint APIs present")
+
+    if "paintAbsoluteColors" not in app and "facesToColors54" not in app:
+        fail("app absolute", "solve must start from absolute photo colors")
+    else:
+        ok("app starts 3D from absolute photo colors")
+
+    apply_block = app.split("function applySolution")[1].split("function showResult")[0]
+    if "paintUserCubeFromFaces" not in apply_block and "paintAbsoluteColors" not in apply_block:
+        fail("applySolution absolute", "must paintAbsolute / photo faces at solve start")
+    else:
+        ok("applySolution paints photo colors once")
 
     if "MeshBasicMaterial" not in cube:
         fail("unlit stickers", "stickers must be MeshBasicMaterial so brightness stays flat")
